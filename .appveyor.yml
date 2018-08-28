@@ -1,0 +1,71 @@
+# Copyright 2018 M. Riechert and D. Meyer. Licensed under the MIT License.
+# Adapted from https://github.com/meta-toolkit/meta/blob/c7019401185cdfa15e1193aad821894c35a83e3f/.appveyor.yml
+image: Visual Studio 2017 # See https://www.appveyor.com/docs/build-environment/
+
+environment:
+  global:
+    GRIB1: 0 # GRIB1=1 currently does not work.
+    GRIB2: 1
+
+  matrix:
+    - BUILD_TYPE: Debug
+      MODE: serial
+      NESTING: basic
+
+    - BUILD_TYPE: Debug
+      MODE: dmpar
+      NESTING: basic
+
+init:
+  - ps: if (!$Env:TRIGGER_REPO) { Exit-AppVeyorBuild }
+  - echo %TRIGGER_REPO%
+  - echo %TRIGGER_COMMIT%
+  - echo %TRIGGER_BUILD_NUMBER%
+  - echo %WRF_REPO%
+  - echo %WPS_REPO%
+  - echo %WRF_COMMIT%
+  - echo %WPS_COMMIT%
+  - echo %DATA_REPO%
+  - echo %WATS_MODE%
+  # Default Python is 2.7, we require 3.
+  - set PATH=C:\Python36-x64;C:\Python36-x64\scripts;%PATH%
+  - python -V
+  - pip -V
+
+install:
+  - set PENDING=1
+  - bash -l "%APPVEYOR_BUILD_FOLDER%/.ci/update-commit-status.sh"
+  - ps: if ($Env:MODE.StartsWith("dm")) { $Env:MPI_FLAG="--mpi" }
+  - set DATA_BRANCH=%TRIGGER_REPO%-%TRIGGER_BUILD_NUMBER%-%MODE%
+  - echo Downloading reference data from branch %DATA_BRANCH% of %DATA_REPO%
+  - git clone --depth=1 --branch=%DATA_BRANCH% git@github.com:%DATA_REPO%.git output_make
+  - dir /S /B /A:-D output_make | findstr /v "\.git"
+  - git clone --depth=100 --no-single-branch git@github.com:%WRF_REPO%.git WRF
+  - git clone --depth=100 --no-single-branch git@github.com:%WPS_REPO%.git WPS
+  - cd WRF
+  - git checkout %WRF_COMMIT%
+  - cd ..\WPS
+  - git checkout %WPS_COMMIT%
+  - cd ..
+  - pip install -r requirements.txt
+  - cd WRF
+  - call .ci\appveyor\setup-dependencies.bat
+  - call .ci\appveyor\install-wrf.bat
+  - cd ..\WPS
+  - call .ci\appveyor\install-wps.bat
+  - cd ..
+
+build: off
+
+test_script:
+  - python wats/main.py run --mode %WATS_MODE% --wrf-dir WRF/build/install --wps-dir WPS/build/install --wps-case-output-dir output_make/wps/00 --work-dir work_cmake %MPI_FLAG%
+  - dir /S /B /A:-D work_cmake\output
+  - python wats/main.py diff --mode %WATS_MODE% output_make work_cmake/output
+  - set SUCCESS=1
+
+on_finish:
+  - set PENDING=0
+  - ps: if ($Env:TRIGGER_REPO) { bash -l "$Env:APPVEYOR_BUILD_FOLDER/.ci/update-commit-status.sh" }
+  # https://www.appveyor.com/docs/packaging-artifacts/#pushing-artifacts-from-scripts
+  # Need to push artifacts manually as this doesn't happen when the diff fails.
+  - ps: if ($Env:TRIGGER_REPO) { $root = Resolve-Path .\work_cmake\output; [IO.Directory]::GetFiles($root.Path, '*.*', 'AllDirectories') | % { Push-AppveyorArtifact $_ -FileName $_.Substring($root.Path.Length + 1) -DeploymentName output } }
