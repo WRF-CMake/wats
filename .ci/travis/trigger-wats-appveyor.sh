@@ -23,7 +23,7 @@ tmpl='{
   }
 }'
 
-body=$(printf "$tmpl" "$WATS_REPO_USER" "$WATS_REPO_NAME" "$WATS_BRANCH" \
+body=$(printf "$tmpl" "$WATS_REPO_NAME" "$WATS_BRANCH" \
                       "$TRAVIS_REPO_SLUG" "$TRAVIS_COMMIT" "$TRAVIS_BUILD_NUMBER" \
                       "$WRF_REPO" "$WPS_REPO" "$WRF_COMMIT" "$WPS_COMMIT" \
                       "$WATS_DATA_REPO" "$WATS_MODE")
