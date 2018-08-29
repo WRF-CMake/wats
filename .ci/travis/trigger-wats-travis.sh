@@ -42,7 +42,8 @@ code=$(curl -s -S -o /tmp/http.log -w "%{http_code}" -X POST \
     -H "Travis-API-Version: 3" \
     -H "Authorization: token ${TRAVIS_API_TOKEN}" \
     -d "$body" \
-    https://api.travis-ci.com/repo/$WATS_REPO_ENC/requests)
+    https://api.travis-ci.org/repo/$WATS_REPO_ENC/requests)
+    # TODO change to .com after migration
 
 printf "\nStatus Code: $code\nResponse:\n"
 
