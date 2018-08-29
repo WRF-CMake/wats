@@ -38,10 +38,10 @@ install:
   - ps: if ($Env:MODE.StartsWith("dm")) { $Env:MPI_FLAG="--mpi" }
   - set DATA_BRANCH=%TRIGGER_REPO%-%TRIGGER_BUILD_NUMBER%-%MODE%
   - echo Downloading reference data from branch %DATA_BRANCH% of %DATA_REPO%
-  - git clone --depth=1 --branch=%DATA_BRANCH% git@github.com:%DATA_REPO%.git output_make
+  - git clone --depth=1 --branch=%DATA_BRANCH% https://github.com/%DATA_REPO%.git output_make
   - dir /S /B /A:-D output_make | findstr /v "\.git"
-  - git clone --depth=100 --no-single-branch git@github.com:%WRF_REPO%.git WRF
-  - git clone --depth=100 --no-single-branch git@github.com:%WPS_REPO%.git WPS
+  - git clone --depth=100 --no-single-branch https://github.com/%WRF_REPO%.git WRF
+  - git clone --depth=100 --no-single-branch https://github.com/%WPS_REPO%.git WPS
   - cd WRF
   - git checkout %WRF_COMMIT%
   - cd ..\WPS

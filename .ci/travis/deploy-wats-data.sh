@@ -9,5 +9,5 @@ cd $1
 git init
 git add .
 git commit -m "automated commit"
-git remote add origin git@github.com:$WATS_DATA_REPO.git
+git remote add origin https://github.com/$WATS_DATA_REPO.git
 git push --force origin master:$TRAVIS_REPO_SLUG-$TRAVIS_BUILD_NUMBER-$MODE
