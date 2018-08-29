@@ -4,10 +4,11 @@ set -e
 # Copyright 2018 M. Riechert and D. Meyer. Licensed under the MIT License.
 # Note: This script is used from the WRF/WPS repositories during CI.
 
+WATS_REPO_USER=`dirname $WATS_REPO`
 WATS_REPO_NAME=`basename $WATS_REPO`
 
 tmpl='{
-  "accountName": "dmey",
+  "accountName": "%s",
   "projectSlug": "%s",
   "branch": "%s",
   "environmentVariables": {
@@ -23,7 +24,7 @@ tmpl='{
   }
 }'
 
-body=$(printf "$tmpl" "$WATS_REPO_NAME" "$WATS_BRANCH" \
+body=$(printf "$tmpl" "$WATS_REPO_USER" "$WATS_REPO_NAME" "$WATS_BRANCH" \
                       "$TRAVIS_REPO_SLUG" "$TRAVIS_COMMIT" "$TRAVIS_BUILD_NUMBER" \
                       "$WRF_REPO" "$WPS_REPO" "$WRF_COMMIT" "$WPS_COMMIT" \
                       "$WATS_DATA_REPO" "$WATS_MODE")
