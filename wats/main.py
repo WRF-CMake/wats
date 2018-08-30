@@ -33,6 +33,10 @@ def get_output_dir(work_dir: Path) -> Path:
 def create_empty_dir(path: Path) -> None:
     if path.exists():
         logging.info('Removing existing folder {}'.format(path))
+        # work-around: handle 'geo' folder link specially as rmtree would recurse into it
+        geo_link = path / 'geo'
+        if geo_link.exists():
+            geo_link.unlink()
         shutil.rmtree(str(path))
     logging.info('Creating folder {}'.format(path))
     path.mkdir(parents=True)
@@ -58,9 +62,13 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> None:
             mpi_path = 'mpiexec'
         args_list.insert(0, mpi_path)
 
-    result = subprocess.run(args_list, cwd=str(cwd),
-                            check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            universal_newlines=True)
+    try:
+        result = subprocess.run(args_list, cwd=str(cwd),
+                                check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(tool + ' output:\n' + e.stdout)
+        raise
     for err_msg in ['ERROR', 'FATAL']:
         if err_msg in result.stdout:
             logging.error(tool + ' output:\n' + result.stdout)
@@ -89,12 +97,13 @@ def run_wps_case(wps_nml_path: Path, wps_dir: Path, work_dir: Path, use_mpi: boo
     for tool in ['geogrid.exe', 'ungrib.exe', 'metgrid.exe']:
         supports_mpi = tool != 'ungrib.exe'
         run_exe([wps_dir / tool], cwd=run_dir, use_mpi=use_mpi and supports_mpi)
+    logging.info('Executables ran successfully')
 
-    for path in run_dir.glob('geo_em*.nc'):
-        shutil.move(str(path), str(output_dir))
+    output_patterns = ['geo_em*.nc', 'met_em*.nc', '*.log*']
 
-    for path in run_dir.glob('met_em*.nc'):
-        shutil.move(str(path), str(output_dir))
+    for pattern in output_patterns:
+        for path in run_dir.glob(pattern):
+            shutil.move(str(path), str(output_dir))
 
     return output_dir
 
@@ -112,13 +121,15 @@ def run_wrf_case(wrf_nml_path: Path, wps_case_output_dir: Path, wrf_dir: Path, w
     for tool in ['real.exe', 'wrf.exe']:
         run_exe([wrf_dir / 'main' / tool], cwd=run_dir, use_mpi=use_mpi)
 
-    for path in run_dir.glob('wrfout*'):
-        shutil.move(str(path), str(output_dir))
+    output_patterns = ['wrfout*', 'rsl.out.*', 'rsl.error.*']
+
+    for pattern in output_patterns:
+        for path in run_dir.glob(pattern):
+            shutil.move(str(path), str(output_dir))
     
     return output_dir
 
 def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wps_dir: Path, wps_case_output_dir: Optional[Path], work_dir: Path) -> None:
-    create_empty_dir(get_output_dir(work_dir))
     if mode == 'wps':
         for path in WPS_CASES_DIR.glob('namelist.wps.*'):
             run_wps_case(path, wps_dir, work_dir, use_mpi)
@@ -137,13 +148,16 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative:
     aggr_str = 'average' if mean else 'per-pixel'
     logging.info('Comparing {} <-> {}'.format(left_dir, right_dir))
     logging.info('Maximum allowed {} {} difference: {:.2e}'.format(type_str, aggr_str, tol))
+
+    exclude_files = ['.git', '.log', 'rsl.']
     
     dir_stats = nccmp.Stats(True, 0.0, 0.0, 0.0, 0.0)
     for left_path in left_dir.glob('{}/**/*'.format(mode)):
         if not left_path.is_file():
             continue
-        if '.git' in str(left_path):
-            continue
+        for part in exclude_files:
+            if part in str(left_path):
+                continue
         rel_path = left_path.relative_to(left_dir)
         right_path = right_dir / rel_path
         logging.info('Comparing {}'.format(rel_path))
