@@ -50,7 +50,7 @@ def create_case_dirs(mode: str, nml_path: Path, work_dir: Path) -> Tuple[Path,Pa
     create_empty_dir(output_dir)
     return run_dir, output_dir
 
-def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> None:
+def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> bool:
     args_list = [str(arg) for arg in args]
     tool = Path(args_list[0]).name
     logging.info('Running ' + tool + (' with MPI' if use_mpi else ''))
@@ -62,22 +62,28 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> None:
             extra_flags = ['-exitcodes', '-lines']
         else:
             mpi_path = 'mpiexec'
-            extra_flags = ['-print-all-exitcodes', '-prepend-rank']
+            extra_flags = ['-print-all-exitcodes']
         args_list = [mpi_path, '-n', str(multiprocessing.cpu_count())] + extra_flags + args_list
 
+    success = True
     try:
         result = subprocess.run(args_list, cwd=str(cwd),
                                 check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 universal_newlines=True)
     except subprocess.CalledProcessError as e:
-        logging.error(tool + ' output:\n' + e.stdout)
-        raise
-    for err_msg in ['ERROR', 'FATAL']:
-        if err_msg in result.stdout:
-            logging.error(tool + ' output:\n' + result.stdout)
-            raise RuntimeError(tool + ' failed')
-    with (cwd / (tool + '.log')).open('w') as fp:
-        fp.write(result.stdout)
+        success = False
+        logging.error(tool + ' failed, output:\n' + e.stdout)
+        with (cwd / (tool + '.log')).open('w') as fp:
+            fp.write(e.stdout)
+    else:
+        for err_msg in ['ERROR', 'FATAL', 'Error']:
+            if err_msg in result.stdout:
+                success = False
+                logging.error(tool + 'failed, output:\n' + result.stdout)
+                break
+        with (cwd / (tool + '.log')).open('w') as fp:
+            fp.write(result.stdout)
+    return success
 
 def run_wps_case(wps_nml_path: Path, wps_dir: Path, work_dir: Path, use_mpi: bool) -> Path:
     geo_data_dir = work_dir / 'geo'
@@ -99,16 +105,23 @@ def run_wps_case(wps_nml_path: Path, wps_dir: Path, work_dir: Path, use_mpi: boo
     link(wps_dir / 'metgrid' / 'METGRID.TBL.ARW', run_dir / 'metgrid' / 'METGRID.TBL')
     link(wps_nml_path, run_dir / 'namelist.wps')
 
+    success = True
     for tool in ['geogrid.exe', 'ungrib.exe', 'metgrid.exe']:
         supports_mpi = tool != 'ungrib.exe'
-        run_exe([wps_dir / tool], cwd=run_dir, use_mpi=use_mpi and supports_mpi)
-    logging.info('Executables ran successfully')
+        if not run_exe([wps_dir / tool], cwd=run_dir, use_mpi=use_mpi and supports_mpi):
+            success = False
+            break
+    if success:
+        logging.info('Executables ran successfully')
 
     output_patterns = ['geo_em*.nc', 'met_em*.nc', '*.log*']
 
     for pattern in output_patterns:
         for path in run_dir.glob(pattern):
             shutil.move(str(path), str(output_dir))
+
+    if not success:
+        raise RuntimeError('Failure, see above')
 
     return output_dir
 
@@ -123,14 +136,22 @@ def run_wrf_case(wrf_nml_path: Path, wps_case_output_dir: Path, wrf_dir: Path, w
 
     link(wrf_nml_path, run_dir / 'namelist.input')
 
+    success = True
     for tool in ['real.exe', 'wrf.exe']:
-        run_exe([wrf_dir / 'main' / tool], cwd=run_dir, use_mpi=use_mpi)
+        if not run_exe([wrf_dir / 'main' / tool], cwd=run_dir, use_mpi=use_mpi):
+            success = False
+            break
+    if success:
+        logging.info('Executables ran successfully')
 
     output_patterns = ['wrfout*', 'rsl.out.*', 'rsl.error.*']
 
     for pattern in output_patterns:
         for path in run_dir.glob(pattern):
             shutil.move(str(path), str(output_dir))
+
+    if not success:
+        raise RuntimeError('Failure, see above')
     
     return output_dir
 
