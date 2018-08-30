@@ -7,6 +7,7 @@ import platform
 import shutil
 from pathlib import Path
 import subprocess
+import multiprocessing
 import argparse
 import logging
 
@@ -58,9 +59,11 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> None:
         if platform.system() == 'Windows':
             # Microsoft MPI
             mpi_path = os.path.join(os.environ['MSMPI_BIN'], 'mpiexec.exe')
+            extra_flags = ['-exitcodes', '-lines']
         else:
             mpi_path = 'mpiexec'
-        args_list.insert(0, mpi_path)
+            extra_flags = ['-print-all-exitcodes', '-prepend-rank']
+        args_list = [mpi_path, '-n', str(multiprocessing.cpu_count())] + extra_flags + args_list
 
     try:
         result = subprocess.run(args_list, cwd=str(cwd),
@@ -73,6 +76,8 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> None:
         if err_msg in result.stdout:
             logging.error(tool + ' output:\n' + result.stdout)
             raise RuntimeError(tool + ' failed')
+    with (cwd / (tool + '.log')).open('w') as fp:
+        fp.write(result.stdout)
 
 def run_wps_case(wps_nml_path: Path, wps_dir: Path, work_dir: Path, use_mpi: bool) -> Path:
     geo_data_dir = work_dir / 'geo'
