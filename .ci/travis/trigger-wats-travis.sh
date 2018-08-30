@@ -6,6 +6,7 @@ set -e
 
 tmpl='{
   "request": {
+    "message": "%s",
     "branch": "%s",
     "config": {
       "env": {
@@ -25,7 +26,8 @@ tmpl='{
   }
 }'
 
-body=$(printf "$tmpl" "$WATS_BRANCH" \
+body=$(printf "$tmpl" "type: $WATS_MODE, repo: $TRAVIS_REPO_SLUG, build: $TRAVIS_BUILD_NUMBER, commit: $TRAVIS_COMMIT" \
+                      "$WATS_BRANCH" \
                       "$TRAVIS_REPO_SLUG" "$TRAVIS_COMMIT" "$TRAVIS_BUILD_NUMBER" \
                       "$WRF_REPO" "$WPS_REPO" "$WRF_COMMIT" "$WPS_COMMIT" \
                       "$WATS_DATA_REPO" "$WATS_MODE")
