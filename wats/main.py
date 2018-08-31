@@ -181,9 +181,8 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative:
     for left_path in left_dir.glob('{}/**/*'.format(mode)):
         if not left_path.is_file():
             continue
-        for part in exclude_files:
-            if part in str(left_path):
-                continue
+        if any(part in str(left_path) for part in exclude_files):
+            continue
         rel_path = left_path.relative_to(left_dir)
         right_path = right_dir / rel_path
         logging.info('Comparing {}'.format(rel_path))
