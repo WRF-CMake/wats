@@ -19,6 +19,10 @@ restart_interval = 5000,
  io_form_restart                     = 2
  io_form_input                       = 2
  io_form_boundary                    = 2
+debug_level                         = 0
+ auxinput4_inname                    = "wrflowinp_d<domain>"
+ auxinput4_interval                  = 360, 360, 360,
+ io_form_auxinput4                   = 2
  /
 
  &domains
