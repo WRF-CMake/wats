@@ -43,21 +43,35 @@ parent_time_step_ratio = 1, 3,
  smooth_option                       = 0
  /
 
- &physics
- physics_suite                       = 'CONUS'
- mp_physics                          = 0,      0
- cu_physics                          = -1,    -1
- ra_lw_physics                       = -1,    -1
- ra_sw_physics                       = -1,    -1
- bl_pbl_physics                      = -1,    -1
- sf_sfclay_physics                   = -1,    -1
- sf_surface_physics                  = -1,    -1
- radt                                = 30,    30
- bldt                                =  0,     0
- cudt                                =  5,     5
- icloud                              =  1,
- num_land_cat                        = 21,
- sf_urban_physics                    =  0,     0
+&physics
+ mp_physics                          = 4,     4,     4,
+ ra_lw_physics                       = 3,     3,     3,
+ ra_sw_physics                       = 3,     3,     3,
+ radt                                = 21,    21,    21,
+ sf_sfclay_physics                   = 2,     2,     2,
+ sf_surface_physics                  = 4,     4,     4,
+ bl_pbl_physics                      = 2,     2,     2,
+ bldt                                = 0,     0,     0,
+ cu_physics                          = 2,     2,     0,
+ sf_urban_physics                    = 0,     0,     0,
+ shcu_physics                        = 0,     0,     0,
+ topo_shading                        = 0,     0,     0,
+ cudt                                = 5,     5,     5,
+ sf_ocean_physics                    = 1,
+ oml_hml0                            = 50,
+ oml_gamma                           = 0.14
+ isfflx                              = 1,
+ ifsnow                              = 0,
+ icloud                              = 1,
+ surface_input_source                = 3,
+ num_soil_layers                     = 4,
+ num_land_cat                        = 28,
+ mp_zero_out                         = 0,
+ levsiz                              = 59
+ paerlev                             = 29
+ cam_abs_freq_s                      = 21600
+ cam_abs_dim1                        = 4
+ cam_abs_dim2                        = 28
  /
 
  &fdda
