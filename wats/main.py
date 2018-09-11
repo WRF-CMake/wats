@@ -157,7 +157,7 @@ def run_wrf_case(wrf_nml_path: Path, wps_case_output_dir: Path, wrf_dir: Path, w
 
 def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wps_dir: Path, wps_case_output_dir: Optional[Path], work_dir: Path) -> None:
     if mode == 'wps':
-        for path in WPS_CASES_DIR.glob('namelist.wps.*'):
+        for path in sorted(WPS_CASES_DIR.glob('namelist.wps.*')):
             run_wps_case(path, wps_dir, work_dir, use_mpi)
     else:
         if wps_case_output_dir is None:
@@ -166,7 +166,7 @@ def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wps_dir: Path, wps_case_o
             wps_case_output_dir = run_wps_case(wps_nml_path, wps_dir, work_dir, use_mpi)
         else:
             logging.info('Using existing WPS output from {}'.format(wps_case_output_dir))
-        for path in WRF_CASES_DIR.glob('namelist.input.*'):
+        for path in sorted(WRF_CASES_DIR.glob('namelist.input.*')):
             run_wrf_case(path, wps_case_output_dir, wrf_dir, work_dir, use_mpi)
 
 def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative: bool, mean: bool) -> None:
