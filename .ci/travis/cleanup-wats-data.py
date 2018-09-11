@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import github
 
 EXCLUDE = ['master']
-KEEP_NEWEST = 5
+KEEP_NEWEST = 2
 REMOVE_AFTER = timedelta(days=1)
 DRY_RUN = False
 
