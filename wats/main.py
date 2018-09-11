@@ -155,7 +155,7 @@ def run_wrf_case(wrf_nml_path: Path, wps_case_output_dir: Path, wrf_dir: Path, w
     
     return output_dir
 
-def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wps_dir: Path, wps_case_output_dir: Optional[Path], work_dir: Path) -> None:
+def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wrf_case: Optional[str], wps_dir: Path, wps_case_output_dir: Optional[Path], work_dir: Path) -> None:
     if mode == 'wps':
         for path in sorted(WPS_CASES_DIR.glob('namelist.wps.*')):
             run_wps_case(path, wps_dir, work_dir, use_mpi)
@@ -167,6 +167,9 @@ def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wps_dir: Path, wps_case_o
         else:
             logging.info('Using existing WPS output from {}'.format(wps_case_output_dir))
         for path in sorted(WRF_CASES_DIR.glob('namelist.input.*')):
+            case_name = get_case_name(path)
+            if wrf_case and wrf_case != case_name:
+                continue
             run_wrf_case(path, wps_case_output_dir, wrf_dir, work_dir, use_mpi)
 
 def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative: bool, mean: bool) -> None:
@@ -219,6 +222,8 @@ if __name__ == '__main__':
     run_parser.add_argument('--mpi', action='store_true', help='whether to use MPI')
     run_parser.add_argument('--wrf-dir', required=True, type=as_path,
                             help='WRF install directory')
+    run_parser.add_argument('--wrf-case',
+                            help='Run only the given case, e.g. 21')                  
     run_parser.add_argument('--wps-dir', required=True, type=as_path,
                             help='WPS install directory')
     run_parser.add_argument('--wps-case-output-dir', type=as_path,
@@ -241,7 +246,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     if args.subparser_name == 'run':
-        run_cases(args.mode, args.mpi, args.wrf_dir, args.wps_dir, args.wps_case_output_dir, args.work_dir)
+        run_cases(args.mode, args.mpi, args.wrf_dir, args.wrf_case, args.wps_dir, args.wps_case_output_dir, args.work_dir)
     elif args.subparser_name == 'diff':
         diff_cases(args.mode, args.left_dir, args.right_dir, args.tol, not args.abs, not args.per_pixel)
     else:
