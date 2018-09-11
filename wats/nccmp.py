@@ -15,6 +15,10 @@ Stats = namedtuple('Stats', ['equal', 'max_abs_diff', 'max_rel_diff', 'mean_abs_
 def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, relative=False, mean=False) -> Stats:
     var1 = nc1.variables[name][:]
     var2 = nc2.variables[name][:]
+
+    if var1.shape != var2.shape:
+        dims = nc1.variables[name].dimensions
+        raise RuntimeError(f'Shape mismatch for {name}: {var1.shape} != {var2.shape} ({dims})')
     
     if not np.issubdtype(var1.dtype, np.number):
         equal = (var1 == var2).all()
