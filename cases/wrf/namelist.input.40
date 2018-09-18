@@ -43,23 +43,20 @@ parent_time_step_ratio = 1, 3,
  smooth_option                       = 0
  /
 
- &physics
- mp_physics                          = 1,     1,     1,
- ra_lw_physics                       = 1,     1,     1,
- ra_sw_physics                       = 1,     1,     1,
+&physics
+ mp_physics                          = 14,    14,    14,
+ ra_lw_physics                       = 3,     3,     3,
+ ra_sw_physics                       = 3,     3,     3,
  radt                                = 21,    21,    21,
- sf_sfclay_physics                   = 1,     1,     1,
+ sf_sfclay_physics                   = 7,     7,     7,
  sf_surface_physics                  = 1,     1,     1,
- topo_wind                           = 0,     0,     0,
- bl_pbl_physics                      = 1,     1,     1,
+ bl_pbl_physics                      = 7,     7,     7,
  bldt                                = 0,     0,     0,
- cu_physics                          = 1,     1,     0,
- cudt                                = 5,     5,     5,
- sf_ocean_physics                    = 1,
- oml_hml0                            = 50,
- oml_gamma                           = 0.14
- slope_rad                           = 1,     1,     1,
+ cu_physics                          = 2,     2,     0,
+ sf_urban_physics                    = 0,     0,     0,
+ shcu_physics                        = 0,     0,     0,
  topo_shading                        = 0,     0,     0,
+ cudt                                = 0,     0,     0,
  isfflx                              = 1,
  ifsnow                              = 0,
  icloud                              = 1,
@@ -67,6 +64,11 @@ parent_time_step_ratio = 1, 3,
  num_soil_layers                     = 5,
  num_land_cat                        = 21,
  mp_zero_out                         = 0,
+ levsiz                              = 59
+ paerlev                             = 29
+ cam_abs_freq_s                      = 21600
+ cam_abs_dim1                        = 4
+ cam_abs_dim2                        = 28
  /
 
  &fdda
@@ -85,10 +87,11 @@ parent_time_step_ratio = 1, 3,
  khdif                               = 0,      0,      0,
  kvdif                               = 0,      0,      0,
  non_hydrostatic                     = .true., .true., .true.,
- moist_adv_opt                       = 1,      1,      1,      
- scalar_adv_opt                      = 1,      1,      1,     
+ moist_adv_opt                       = 2,      2,      2,      
+ scalar_adv_opt                      = 2,      2,      2,     
  chem_adv_opt                        = 0,      0,      0,     
  tke_adv_opt                         = 0,      0,      0,     
+ gwd_opt                             = 0,
  /
 
  &bdy_control
