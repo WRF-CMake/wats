@@ -61,9 +61,10 @@ def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, relati
         equal = above_thresh_count == 0
         extra = '' if equal else ' ({} pixels)'.format(above_thresh_count)
 
-    logging.info("Diff for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(name,
-        max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff,
-        ('' if equal else ' -> ABOVE THRESHOLD') + extra))
+    if max_abs_diff > 0:
+        logging.info("Diff for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(name,
+            max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff,
+            ('' if equal else ' -> ABOVE THRESHOLD') + extra))
     
     stats = Stats(equal, max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff)
     return stats
