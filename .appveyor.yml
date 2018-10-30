@@ -36,7 +36,8 @@ install:
   - set PENDING=1
   - bash -l "%APPVEYOR_BUILD_FOLDER%/.ci/update-commit-status.sh"
   - ps: if ($Env:MODE.StartsWith("dm")) { $Env:MPI_FLAG="--mpi" }
-  - set DATA_BRANCH=%TRIGGER_REPO%-%TRIGGER_BUILD_NUMBER%-%MODE%
+  # For now, compare against Linux reference build.
+  - set DATA_BRANCH=%TRIGGER_REPO%-%TRIGGER_BUILD_NUMBER%-linux-%MODE%
   - echo Downloading reference data from branch %DATA_BRANCH% of %DATA_REPO%
   - git clone --depth=1 --branch=%DATA_BRANCH% https://github.com/%DATA_REPO%.git output_make
   - dir /S /B /A:-D output_make | findstr /v "\.git"

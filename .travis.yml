@@ -65,7 +65,7 @@ matrix:
 before_install:
   - PENDING=1 .ci/update-commit-status.sh
   - if [[ $MODE == dm* ]]; then export MPI_FLAG=--mpi ; fi
-  - export DATA_BRANCH=$TRIGGER_REPO-$TRIGGER_BUILD_NUMBER-$MODE
+  - export DATA_BRANCH=$TRIGGER_REPO-$TRIGGER_BUILD_NUMBER-$TRAVIS_OS_NAME-$MODE
   - echo "Downloading reference data from branch $DATA_BRANCH of $DATA_REPO"
   - git clone --depth=1 --branch=$DATA_BRANCH https://github.com/$DATA_REPO.git output_make
   - ls -lR output_make
