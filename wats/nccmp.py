@@ -29,7 +29,7 @@ def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, relati
     var1 = ma.masked_equal(var1, WRF_NODATA)
     var2 = ma.masked_equal(var2, WRF_NODATA)
 
-    assert var1.mask == var2.mask
+    assert (var1.mask == var2.mask).all()
     assert not var1.mask.all()
 
     abs_diff = abs(var1 - var2)
