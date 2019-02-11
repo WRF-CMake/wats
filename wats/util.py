@@ -7,7 +7,6 @@ import platform
 import subprocess
 
 def link_file(src_path: Path, link_path: Path) -> None:
-    assert src_path.is_file()
     if link_path.exists():
         link_path.unlink()
     try:
@@ -18,7 +17,6 @@ def link_file(src_path: Path, link_path: Path) -> None:
         os.link(str(src_path), str(link_path))
 
 def link_folder(src_path: Path, link_path: Path) -> None:
-    assert src_path.is_dir()
     if platform.system() == 'Windows':
         # Directory junctions don't require admin rights.
         subprocess.check_output('cmd /c mklink /j "{}" "{}"'.format(link_path, src_path), shell=True)
