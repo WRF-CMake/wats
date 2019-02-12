@@ -1,3 +1,5 @@
+colorlog
+colorama
 requests
 numpy
 netCDF4

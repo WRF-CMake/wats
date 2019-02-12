@@ -8,6 +8,8 @@ import numpy as np
 from numpy import ma
 import netCDF4 as nc
 
+from wats.util import get_log_level
+
 WRF_NODATA = 32768.0
 
 Stats = namedtuple('Stats', ['equal', 'max_abs_diff', 'max_rel_diff', 'mean_abs_diff', 'mean_rel_diff'])
@@ -61,12 +63,14 @@ def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, relati
         equal = above_thresh_count == 0
         extra = '' if equal else ' ({} pixels)'.format(above_thresh_count)
 
-    if max_abs_diff > 0:
-        logging.info("Diff for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(name,
-            max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff,
-            ('' if equal else ' -> ABOVE THRESHOLD') + extra))
-    
     stats = Stats(equal, max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff)
+
+    if max_abs_diff > 0:
+        logging.log(get_log_level(stats), 
+            "Diff for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(name,
+                max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff,
+                ('' if equal else ' -> ABOVE THRESHOLD') + extra))
+    
     return stats
 
 def compare(path1: str, path2: str, tol: float, relative=False, mean=False) -> Stats:

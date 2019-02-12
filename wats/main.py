@@ -16,7 +16,7 @@ ROOT_DIR = THIS_DIR.parent
 sys.path.append(str(ROOT_DIR))
 
 import wats.data
-from wats.util import link
+from wats.util import link, get_log_level, init_logging
 from wats import nccmp
 
 WPS_CASES_DIR = ROOT_DIR / 'cases' / 'wps'
@@ -191,25 +191,27 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative:
         logging.info('Comparing {}'.format(rel_path))
         
         file_stats = nccmp.compare(left_path, right_path, tol, relative, mean)
-
-        logging.info("Max diff over all variables for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
-            rel_path,
-            file_stats.max_abs_diff, file_stats.max_rel_diff,
-            file_stats.mean_abs_diff, file_stats.mean_rel_diff,
-            '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
+        
+        logging.log(get_log_level(dir_stats),
+            "Max diff over all variables for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
+                rel_path,
+                file_stats.max_abs_diff, file_stats.max_rel_diff,
+                file_stats.mean_abs_diff, file_stats.mean_rel_diff,
+                '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
 
         dir_stats = nccmp.merge_stats(dir_stats, file_stats)
     
-    logging.info("Max diff over all files: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
-        dir_stats.max_abs_diff, dir_stats.max_rel_diff,
-        dir_stats.mean_abs_diff, dir_stats.mean_rel_diff,        
-        '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
+    logging.log(get_log_level(dir_stats),
+        "Max diff over all files: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
+            dir_stats.max_abs_diff, dir_stats.max_rel_diff,
+            dir_stats.mean_abs_diff, dir_stats.mean_rel_diff,
+            '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
     
     if not dir_stats.equal:
         raise RuntimeError('At least one file had {} {} differences > {:.2e}'.format(aggr_str.lower(), type_str, tol))
     
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', datefmt='%H:%M:%S')
+    init_logging()
 
     def as_path(path: str) -> Path:
         return Path(path).absolute()

@@ -5,6 +5,12 @@ import shutil
 from pathlib import Path
 import platform
 import subprocess
+import logging
+
+import colorlog
+import colorama
+
+SUCCESS_LOG_LEVEL = 21
 
 def link_file(src_path: Path, link_path: Path) -> None:
     if link_path.exists():
@@ -29,3 +35,25 @@ def link(src: Path, dst: Path) -> None:
         link_file(src, dst)
     else:
         link_folder(src, dst)
+
+def get_log_level(stats):
+    if stats.equal:
+        return SUCCESS_LOG_LEVEL
+    else:
+        return logging.ERROR
+
+def init_logging():
+    colorama.init()
+    logging.basicConfig(level=logging.INFO)
+    logging.addLevelName(SUCCESS_LOG_LEVEL, 'SUCCESS')
+    logger = logging.getLogger()
+    logger.handlers[0].setFormatter(colorlog.ColoredFormatter(
+        '%(log_color)s%(asctime)s %(message)s', datefmt='%H:%M:%S',
+        log_colors={
+            'DEBUG':    'cyan',
+            'INFO':     'reset',
+            'SUCCESS':  'green',
+            'WARNING':  'yellow',
+            'ERROR':    'red',
+            'CRITICAL': 'red,bg_white',
+        }))
