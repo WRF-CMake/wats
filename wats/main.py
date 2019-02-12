@@ -177,10 +177,11 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative:
     aggr_str = 'average' if mean else 'per-pixel'
     logging.info('Comparing {} <-> {}'.format(left_dir, right_dir))
     logging.info('Maximum allowed {} {} difference: {:.2e}'.format(type_str, aggr_str, tol))
+    logging.info('Maximum allowed categorical mismatch ratio: {:.2e}'.format(tol))
 
     exclude_files = ['.git', '.log', 'rsl.']
     
-    dir_stats = nccmp.Stats(True, 0.0, 0.0, 0.0, 0.0)
+    dir_stats = nccmp.Stats(True, 0.0, 0.0, 0.0, 0.0, 0.0)
     for left_path in left_dir.glob('{}/**/*'.format(mode)):
         if not left_path.is_file():
             continue
@@ -193,18 +194,20 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative:
         file_stats = nccmp.compare(left_path, right_path, tol, relative, mean)
         
         logging.log(get_log_level(dir_stats),
-            "Max diff over all variables for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
+            "Max diff over all variables for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e} ratio={:.2e}{}".format(
                 rel_path,
                 file_stats.max_abs_diff, file_stats.max_rel_diff,
                 file_stats.mean_abs_diff, file_stats.mean_rel_diff,
+                file_stats.max_ratio_diff,
                 '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
 
         dir_stats = nccmp.merge_stats(dir_stats, file_stats)
     
     logging.log(get_log_level(dir_stats),
-        "Max diff over all files: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
+        "Max diff over all files: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e} ratio={:.2e}{}".format(
             dir_stats.max_abs_diff, dir_stats.max_rel_diff,
             dir_stats.mean_abs_diff, dir_stats.mean_rel_diff,
+            dir_stats.max_ratio_diff,
             '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
     
     if not dir_stats.equal:
