@@ -172,16 +172,15 @@ def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wrf_case: Optional[str], 
                 continue
             run_wrf_case(path, wps_case_output_dir, wrf_dir, work_dir, use_mpi)
 
-def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative: bool, mean: bool) -> None:
-    type_str = 'relative' if relative else 'absolute'
+def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, mean: bool) -> None:
     aggr_str = 'average' if mean else 'per-pixel'
     logging.info('Comparing {} <-> {}'.format(left_dir, right_dir))
-    logging.info('Maximum allowed {} {} difference: {:.2e}'.format(type_str, aggr_str, tol))
+    logging.info('Maximum allowed relative {} difference: {:.2e}'.format(aggr_str, tol))
     logging.info('Maximum allowed categorical mismatch ratio: {:.2e}'.format(tol))
 
     exclude_files = ['.git', '.log', 'rsl.']
     
-    dir_stats = nccmp.Stats(True, 0.0, 0.0, 0.0, 0.0, 0.0)
+    dir_stats = nccmp.MergedStats(True, 0.0, 0.0, 0.0)
     for left_path in left_dir.glob('{}/**/*'.format(mode)):
         if not left_path.is_file():
             continue
@@ -191,27 +190,29 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, relative:
         right_path = right_dir / rel_path
         logging.info('Comparing {}'.format(rel_path))
         
-        file_stats = nccmp.compare(left_path, right_path, tol, relative, mean)
+        file_stats = nccmp.compare(left_path, right_path, tol, mean)
         
-        logging.log(get_log_level(dir_stats),
-            "Max diff over all variables for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e} ratio={:.2e}{}".format(
-                rel_path,
-                file_stats.max_abs_diff, file_stats.max_rel_diff,
-                file_stats.mean_abs_diff, file_stats.mean_rel_diff,
-                file_stats.max_ratio_diff,
-                '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
+        if nccmp.is_identical(file_stats):
+            logging.log(get_log_level(file_stats), "No diff for {}".format(rel_path))
+        else: 
+            logging.log(get_log_level(file_stats),
+                "Max diff over all variables for {}: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch_ratio={:.2e}{}".format(
+                    rel_path,
+                    file_stats.max_rel_diff, file_stats.mean_rel_diff, file_stats.max_category_mismatch_ratio,
+                    '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
 
         dir_stats = nccmp.merge_stats(dir_stats, file_stats)
     
-    logging.log(get_log_level(dir_stats),
-        "Max diff over all files: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e} ratio={:.2e}{}".format(
-            dir_stats.max_abs_diff, dir_stats.max_rel_diff,
-            dir_stats.mean_abs_diff, dir_stats.mean_rel_diff,
-            dir_stats.max_ratio_diff,
-            '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
+    if nccmp.is_identical(dir_stats):
+        logging.log(get_log_level(dir_stats), "No diff in any file!")
+    else:
+        logging.log(get_log_level(dir_stats),
+            "Max diff over all files: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch_ratio={:.2e}{}".format(
+                dir_stats.max_rel_diff, dir_stats.mean_rel_diff, dir_stats.max_category_mismatch_ratio,
+                '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
     
     if not dir_stats.equal:
-        raise RuntimeError('At least one file had {} {} differences > {:.2e}'.format(aggr_str.lower(), type_str, tol))
+        raise RuntimeError('At least one file exceeded the allowed thresholds')
     
 if __name__ == '__main__':
     init_logging()
@@ -243,9 +244,7 @@ if __name__ == '__main__':
                              help='Right output directory')
     diff_parser.add_argument('--mode', required=True, choices=['wps', 'wrf'], help='whether to run/diff WPS or WRF cases')
     diff_parser.add_argument('--tol', default=0.01, type=float,
-                            help='Maximum difference after which an error is raised')
-    diff_parser.add_argument('--abs', action='store_true',
-                            help='Use absolute difference for comparison (default is relative)')
+                            help='Maximum relative difference after which an error is raised')
     diff_parser.add_argument('--per-pixel', action='store_true',
                             help='Consider each pixel separate for comparison (default is average over all pixels)')
 
@@ -253,6 +252,6 @@ if __name__ == '__main__':
     if args.subparser_name == 'run':
         run_cases(args.mode, args.mpi, args.wrf_dir, args.wrf_case, args.wps_dir, args.wps_case_output_dir, args.work_dir)
     elif args.subparser_name == 'diff':
-        diff_cases(args.mode, args.left_dir, args.right_dir, args.tol, not args.abs, not args.per_pixel)
+        diff_cases(args.mode, args.left_dir, args.right_dir, args.tol, not args.per_pixel)
     else:
         assert False

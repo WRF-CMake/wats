@@ -26,21 +26,29 @@ WRF_CATEGORICAL = set([
 ])
 
 Stats = namedtuple('Stats',
-    ['equal', 'max_abs_diff', 'max_rel_diff', 'mean_abs_diff', 'mean_rel_diff', 'max_ratio_diff'])
+    ['equal', # whether differences are within tolerance
+     'max_abs_diff', 'max_rel_diff', 'mean_abs_diff', 'mean_rel_diff', # continuous variable
+     'category_mismatch_ratio']) # categorical variable 
+
+# Merged stats don't have absolute values due to the different magnitudes
+# of different variables.
+MergedStats = namedtuple('MergedStats',
+    ['equal',
+     'max_rel_diff', 'mean_rel_diff',
+     'max_category_mismatch_ratio'])
 
 def compare_categorical_vars(var1: np.array, var2: np.array, name: str, tol: float) -> Stats:
     mismatches = np.count_nonzero(var1 != var2)
-    ratio_diff = mismatches / var1.size
-    equal = ratio_diff <= tol
-    stats = Stats(equal, 0, 0, 0, 0, ratio_diff)
-    if ratio_diff > 0:
+    ratio = mismatches / var1.size
+    equal = ratio <= tol
+    stats = Stats(equal, 0, 0, 0, 0, ratio)
+    if ratio > 0:
         logging.log(get_log_level(stats), 
-            "Diff for {}: ratio={:.2e}{}".format(name,
-                ratio_diff, ('' if equal else ' -> ABOVE THRESHOLD')))
+            "Diff for {}: cat_mismatch_ratio={:.2e}{}".format(name,
+                ratio, ('' if equal else ' -> ABOVE THRESHOLD')))
     return stats
 
-def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: float, relative: bool, mean: bool) \
-        -> Stats:
+def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: float, mean: bool) -> Stats:
     var1 = ma.masked_equal(var1, WRF_NODATA)
     var2 = ma.masked_equal(var2, WRF_NODATA)
 
@@ -62,16 +70,10 @@ def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: floa
     mean_rel_diff = rel_diff.mean()
     
     if mean:
-        if relative:
-            equal = mean_rel_diff <= tol
-        else:
-            equal = mean_abs_diff <= tol
+        equal = mean_rel_diff <= tol
         extra = ''
     else:
-        if relative:
-            above_thresh = rel_diff > tol
-        else:
-            above_thresh = abs_diff > tol    
+        above_thresh = rel_diff > tol 
         above_thresh_count = np.count_nonzero(above_thresh)
         equal = above_thresh_count == 0
         extra = '' if equal else ' ({} pixels)'.format(above_thresh_count)
@@ -86,7 +88,7 @@ def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: floa
     
     return stats
 
-def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, relative=False, mean=False) -> Stats:
+def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, mean=False) -> Stats:
     var1 = nc1.variables[name][:]
     var2 = nc2.variables[name][:]
 
@@ -101,25 +103,30 @@ def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, relati
     elif name in WRF_CATEGORICAL:
         return compare_categorical_vars(var1, var2, name, tol)
     else:
-        return compare_continuous_vars(var1, var2, name, tol, relative, mean)
+        return compare_continuous_vars(var1, var2, name, tol, mean)
 
-def compare(path1: str, path2: str, tol: float, relative=False, mean=False) -> Stats:
+def compare(path1: str, path2: str, tol: float, mean=False) -> MergedStats:
     nc1 = nc.Dataset(path1, 'r')
     nc2 = nc.Dataset(path2, 'r')
 
     var_names = set(nc1.variables.keys()).union(nc2.variables.keys())
 
-    file_stats = Stats(True, 0.0, 0.0, 0.0, 0.0, 0.0)
+    file_stats = MergedStats(True, 0.0, 0.0, 0.0)
     for var_name in sorted(var_names):
-        var_stats = compare_vars(nc1, nc2, var_name, tol, relative, mean)
+        var_stats = compare_vars(nc1, nc2, var_name, tol, mean)
         file_stats = merge_stats(file_stats, var_stats)
     return file_stats
 
-def merge_stats(stats1: Stats, stats2: Stats) -> Stats:
-    return Stats(
+def merge_stats(stats1: MergedStats, stats2: Union[Stats,MergedStats]) -> MergedStats:
+    try:
+        ratio = stats2.category_mismatch_ratio
+    except AttributeError:
+        ratio = stats2.max_category_mismatch_ratio
+    return MergedStats(
         stats1.equal and stats2.equal,
-        max(stats1.max_abs_diff, stats2.max_abs_diff),
         max(stats1.max_rel_diff, stats2.max_rel_diff),
-        max(stats1.mean_abs_diff, stats2.mean_abs_diff),
         max(stats1.mean_rel_diff, stats2.mean_rel_diff),
-        max(stats1.max_ratio_diff, stats2.max_ratio_diff))
+        max(stats1.max_category_mismatch_ratio, ratio))
+
+def is_identical(stats: MergedStats) -> bool:
+    return stats.max_rel_diff == 0 and stats.max_category_mismatch_ratio == 0
