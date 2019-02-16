@@ -44,8 +44,10 @@ def compare_categorical_vars(var1: np.array, var2: np.array, name: str, tol: flo
     stats = Stats(equal, 0, 0, 0, 0, ratio)
     if ratio > 0:
         logging.log(get_log_level(stats), 
-            "Diff for {}: cat_mismatch_ratio={:.2e}{}".format(name,
-                ratio, ('' if equal else ' -> ABOVE THRESHOLD')))
+            "Diff for {} ({}D): cat_mismatch={:.4f}% ({} of {} pixels) {}".format(
+                name, np.squeeze(var1).ndim,
+                ratio*100, mismatches, var1.size,
+                ('' if equal else ' -> ABOVE THRESHOLD')))
     return stats
 
 def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: float, mean: bool) -> Stats:
@@ -82,7 +84,8 @@ def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: floa
 
     if max_abs_diff > 0:
         logging.log(get_log_level(stats), 
-            "Diff for {}: max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(name,
+            "Diff for {} ({}D): max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
+                name, np.squeeze(var1).ndim,                
                 max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff,
                 ('' if equal else ' -> ABOVE THRESHOLD') + extra))
     

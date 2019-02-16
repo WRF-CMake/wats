@@ -176,7 +176,7 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, mean: boo
     aggr_str = 'average' if mean else 'per-pixel'
     logging.info('Comparing {} <-> {}'.format(left_dir, right_dir))
     logging.info('Maximum allowed relative {} difference: {:.2e}'.format(aggr_str, tol))
-    logging.info('Maximum allowed categorical mismatch ratio: {:.2e}'.format(tol))
+    logging.info('Maximum allowed categorical mismatch (percentage of all pixels): {:.4f}%'.format(tol*100))   
 
     exclude_files = ['.git', '.log', 'rsl.']
     
@@ -188,6 +188,7 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, mean: boo
             continue
         rel_path = left_path.relative_to(left_dir)
         right_path = right_dir / rel_path
+        logging.info('')
         logging.info('Comparing {}'.format(rel_path))
         
         file_stats = nccmp.compare(left_path, right_path, tol, mean)
@@ -196,19 +197,20 @@ def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, mean: boo
             logging.log(get_log_level(file_stats), "No diff for {}".format(rel_path))
         else: 
             logging.log(get_log_level(file_stats),
-                "Max diff over all variables for {}: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch_ratio={:.2e}{}".format(
+                "Max diff over all variables for {}: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch={:.4f}%{}".format(
                     rel_path,
-                    file_stats.max_rel_diff, file_stats.mean_rel_diff, file_stats.max_category_mismatch_ratio,
+                    file_stats.max_rel_diff, file_stats.mean_rel_diff, file_stats.max_category_mismatch_ratio*100,
                     '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
 
         dir_stats = nccmp.merge_stats(dir_stats, file_stats)
     
+    logging.info('')
     if nccmp.is_identical(dir_stats):
         logging.log(get_log_level(dir_stats), "No diff in any file!")
     else:
         logging.log(get_log_level(dir_stats),
-            "Max diff over all files: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch_ratio={:.2e}{}".format(
-                dir_stats.max_rel_diff, dir_stats.mean_rel_diff, dir_stats.max_category_mismatch_ratio,
+            "Max diff over all files: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch={:.4f}%{}".format(
+                dir_stats.max_rel_diff, dir_stats.mean_rel_diff, dir_stats.max_category_mismatch_ratio*100,
                 '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
     
     if not dir_stats.equal:
