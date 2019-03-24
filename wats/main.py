@@ -217,11 +217,11 @@ def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wrf_case: Optional[str], 
                 continue
             run_wrf_case(path, wps_case_output_dir, wrf_dir, work_dir, use_mpi)
 
-def diff_cases(mode: str, ref_dir: Path, cmp_dir: Path,
+def diff_cases(mode: str, ref_dir: Path, trial_dir: Path,
                tol_continuous: float, tol_categorical: float,
                mean: bool) -> bool:
     aggr_str = 'average' if mean else 'per-pixel'
-    logging.info('Comparing {} (reference) <-> {}'.format(ref_dir, cmp_dir))
+    logging.info('Comparing {} (reference) <-> {}'.format(ref_dir, trial_dir))
     logging.info('Maximum allowed relative {} difference: {:.4f}%'.format(aggr_str, tol_continuous*100))
     logging.info('Maximum allowed categorical mismatch (percentage of all pixels): {:.4f}%'.format(tol_categorical))   
 
@@ -241,11 +241,11 @@ def diff_cases(mode: str, ref_dir: Path, cmp_dir: Path,
         if any(part in str(ref_path) for part in exclude_files):
             continue
         rel_path = ref_path.relative_to(ref_dir)
-        cmp_path = cmp_dir / rel_path
+        trial_path = trial_dir / rel_path
         logging.info('')
         logging.info('Comparing {}'.format(rel_path))
         
-        file_equal = nccmp.compare(ref_path, cmp_path,
+        file_equal = nctrial.compare(ref_path, trial_path,
             vars_categorical, vars_continuous, WRF_NODATA,
             tol_continuous, tol_categorical, mean)
 
@@ -281,7 +281,7 @@ if __name__ == '__main__':
     diff_parser = subparsers.add_parser('diff')
     diff_parser.add_argument('ref_dir', type=as_path,
                              help='Reference output directory')
-    diff_parser.add_argument('cmp_dir', type=as_path,
+    diff_parser.add_argument('trial_dir', type=as_path,
                              help='Comparison output directory')
     diff_parser.add_argument('--mode', required=True, choices=['wps', 'wrf'], help='whether to run/diff WPS or WRF cases')
     diff_parser.add_argument('--tol-continuous', default=0.01, type=float,
@@ -295,7 +295,7 @@ if __name__ == '__main__':
     if args.subparser_name == 'run':
         run_cases(args.mode, args.mpi, args.wrf_dir, args.wrf_case, args.wps_dir, args.wps_case_output_dir, args.work_dir)
     elif args.subparser_name == 'diff':
-        equal = diff_cases(args.mode, args.ref_dir, args.cmp_dir, args.tol_continuous/100, args.tol_categorical,
+        equal = diff_cases(args.mode, args.ref_dir, args.trial_dir, args.tol_continuous/100, args.tol_categorical,
             not args.per_pixel_continuous)
         if not equal:
             sys.exit(1)
