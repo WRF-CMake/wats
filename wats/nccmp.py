@@ -1,135 +1,141 @@
 # Copyright 2018 M. Riechert and D. Meyer. Licensed under the MIT License.
 
-from typing import Tuple, Union
+from typing import Tuple, Union, List, Set, Optional
 import logging
 from collections import namedtuple
 
 import numpy as np
 from numpy import ma
 import netCDF4 as nc
+import wrf
 
 from wats.util import get_log_level
 
-WRF_NODATA = 32768.0
+def read_var(ds: nc.Dataset, name: str) -> np.array:
+    if name == 'TKE':
+        u = wrf.getvar(ds, 'U', wrf.ALL_TIMES, squeeze=False).values
+        v = wrf.getvar(ds, 'V', wrf.ALL_TIMES, squeeze=False).values
+        w = wrf.getvar(ds, 'W', wrf.ALL_TIMES, squeeze=False).values
+        dims = ds.dimensions
+        bottom_top = dims['bottom_top'].size
+        south_north = dims['south_north'].size
+        west_east = dims['west_east'].size
+        u = u[:,:bottom_top,:south_north,:west_east]
+        v = v[:,:bottom_top,:south_north,:west_east]
+        w = w[:,:bottom_top,:south_north,:west_east]
+        var = 0.5 * (u**2 + v**2 + w**2)
+    else:
+        try:
+            var = ds.variables[name][:]
+        except KeyError:
+            var = wrf.getvar(ds, name, wrf.ALL_TIMES)[:]
+    return var
 
-WRF_CATEGORICAL = set([
-    'LANDMASK',
-    'LAKEMASK',
-    'LANDSEA',
-    'XLAND',
-    'LU_INDEX',
-    'SCB_DOM',
-    'SCT_DOM',
-    'ISLTYP',
-    'IVGTYP',
-    'NEST_POS'
-])
-
-Stats = namedtuple('Stats',
-    ['equal', # whether differences are within tolerance
-     'max_abs_diff', 'max_rel_diff', 'mean_abs_diff', 'mean_rel_diff', # continuous variable
-     'category_mismatch_ratio']) # categorical variable 
-
-# Merged stats don't have absolute values due to the different magnitudes
-# of different variables.
-MergedStats = namedtuple('MergedStats',
-    ['equal',
-     'max_rel_diff', 'mean_rel_diff',
-     'max_category_mismatch_ratio'])
-
-def compare_categorical_vars(var1: np.array, var2: np.array, name: str, tol: float) -> Stats:
+def compare_categorical_var(var1: np.array, var2: np.array, name: str, tol_percentage: float) -> bool:
     mismatches = np.count_nonzero(var1 != var2)
     ratio = mismatches / var1.size
-    equal = ratio <= tol
-    stats = Stats(equal, 0, 0, 0, 0, ratio)
-    if ratio > 0:
-        logging.log(get_log_level(stats), 
-            "Diff for {} ({}D): cat_mismatch={:.4f}% ({} of {} pixels) {}".format(
-                name, np.squeeze(var1).ndim,
-                ratio*100, mismatches, var1.size,
-                ('' if equal else ' -> ABOVE THRESHOLD')))
-    return stats
+    equal = ratio*100 <= tol_percentage
+    logging.log(get_log_level(equal), 
+        "{}: category mismatches {:.4f}% ({} of {} pixels) {}".format(
+            name,
+            ratio*100, mismatches, var1.size,
+            ('' if equal else ' -> ABOVE THRESHOLD')))
+    return equal
 
-def compare_continuous_vars(var1: np.array, var2: np.array, name: str, tol: float, mean: bool) -> Stats:
-    var1 = ma.masked_equal(var1, WRF_NODATA)
-    var2 = ma.masked_equal(var2, WRF_NODATA)
+def compare_continuous_var(var_ref: np.array, var_cmp: np.array, name: str, tol: float, mean: bool) -> bool:
+    ref_zeros = var_ref == 0
+    cmp_nonzeros_cnt = np.count_nonzero(var_cmp[ref_zeros])
+    if cmp_nonzeros_cnt > 0:
+        logging.error('{}: reference contains {} points with zero where trial is non-zero -> rel. error undefined!'.format(
+            name, cmp_nonzeros_cnt))
+        return False
 
-    assert (var1.mask == var2.mask).all()
-    assert not var1.mask.all()
+    with np.errstate(divide='ignore'):
+        rel_error = (var_ref - var_cmp) / var_ref
+    rel_error[ref_zeros] = 0
 
-    abs_diff = abs(var1 - var2)
-    max_abs_diff = abs_diff.max()
-    mean_abs_diff = abs_diff.mean()
-
-    denom = max(abs(var1).max(), abs(var2).max())
-    if denom > 0:
-        rel_diff = abs_diff / denom
-        max_rel_diff = max_abs_diff / denom
-    else:
-        rel_diff = np.zeros_like(var1)
-        max_rel_diff = 0.0
-
-    mean_rel_diff = rel_diff.mean()
+    max_rel_diff = rel_error.max()
+    mean_rel_diff = rel_error.mean()
     
     if mean:
         equal = mean_rel_diff <= tol
         extra = ''
     else:
-        above_thresh = rel_diff > tol 
+        above_thresh = rel_error > tol
         above_thresh_count = np.count_nonzero(above_thresh)
         equal = above_thresh_count == 0
         extra = '' if equal else ' ({} pixels)'.format(above_thresh_count)
 
-    stats = Stats(equal, max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff, 0)
+    logging.info(
+        '{}: reference mean={:.3e} stddev={:.3e} min={:.3e} max={:.3e}'.format(
+            name, var_ref.mean(), var_ref.std(), var_ref.min(), var_ref.max()))
 
-    if max_abs_diff > 0:
-        logging.log(get_log_level(stats), 
-            "Diff for {} ({}D): max_abs={:.2e} max_rel={:.2e} mean_abs={:.2e} mean_rel={:.2e}{}".format(
-                name, np.squeeze(var1).ndim,                
-                max_abs_diff, max_rel_diff, mean_abs_diff, mean_rel_diff,
-                ('' if equal else ' -> ABOVE THRESHOLD') + extra))
+    logging.info(
+        '{}: trial     mean={:.3e} stddev={:.3e} min={:.3e} max={:.3e}'.format(
+            name, var_cmp.mean(), var_cmp.std(), var_cmp.min(), var_cmp.max()))
+
+    logging.log(get_log_level(equal), 
+        "{}: relative error max={:.4f}% mean={:.4f}%{}".format(
+            name,
+            max_rel_diff*100, mean_rel_diff*100,
+            ('' if equal else ' -> ABOVE THRESHOLD') + extra))
+
+    return equal
+
+def compare_var(var_ref: np.array, var_cmp: np.array, 
+                name: str, is_categorical: bool,
+                no_data: Optional[Union[float,int]],
+                tol: float, mean=False) -> bool:
+    if var_ref.shape != var_cmp.shape:
+        raise RuntimeError(f'Shape mismatch for {name}: {var_ref.shape} != {var_cmp.shape}')
     
-    return stats
+    is_numeric = np.issubdtype(var_ref.dtype, np.number)
 
-def compare_vars(nc1: nc.Dataset, nc2: nc.Dataset, name: str, tol: float, mean=False) -> Stats:
-    var1 = nc1.variables[name][:]
-    var2 = nc2.variables[name][:]
+    if no_data is not None and is_numeric:
+        var_ref = ma.masked_equal(var_ref, no_data)
+        var_cmp = ma.masked_equal(var_cmp, no_data)
+        assert (var_ref.mask == var_cmp.mask).all()
+        if var_ref.mask.all():
+            logging.error('{} has only missing values!')
+            return False
 
-    if var1.shape != var2.shape:
-        dims = nc1.variables[name].dimensions
-        raise RuntimeError(f'Shape mismatch for {name}: {var1.shape} != {var2.shape} ({dims})')
-    
-    if not np.issubdtype(var1.dtype, np.number):
-        if (var1 != var2).any():
-            raise RuntimeError(f'Non-numeric mismatch for {name}: {var1} != {var2}')
-        return Stats(True, 0.0, 0.0, 0.0, 0.0, 0.0)
-    elif name in WRF_CATEGORICAL:
-        return compare_categorical_vars(var1, var2, name, tol)
+    if not is_numeric:
+        if (var_ref != var_cmp).any():
+            logging.error(f'Non-numeric mismatch for {name}: {var_ref} != {var_cmp}')
+            return False
+        return True
+    elif is_categorical:
+        return compare_categorical_var(var_ref, var_cmp, name, tol)
     else:
-        return compare_continuous_vars(var1, var2, name, tol, mean)
+        return compare_continuous_var(var_ref, var_cmp, name, tol, mean)
 
-def compare(path1: str, path2: str, tol: float, mean=False) -> MergedStats:
-    nc1 = nc.Dataset(path1, 'r')
-    nc2 = nc.Dataset(path2, 'r')
+def compare(path_ref: str, path_cmp: str, 
+            var_names_categorical: List[str], 
+            var_names_continuous: List[str],
+            no_data: Optional[Union[float,int]],
+            tol_continuous: float, tol_categorical: float,
+            mean=False) -> bool:
+    nc_ref = nc.Dataset(path_ref, 'r')
+    nc_cmp = nc.Dataset(path_cmp, 'r')
 
-    var_names = set(nc1.variables.keys()).union(nc2.variables.keys())
+    var_names = {var_name: True for var_name in var_names_categorical}
+    var_names.update({var_name: False for var_name in var_names_continuous})
 
-    file_stats = MergedStats(True, 0.0, 0.0, 0.0)
-    for var_name in sorted(var_names):
-        var_stats = compare_vars(nc1, nc2, var_name, tol, mean)
-        file_stats = merge_stats(file_stats, var_stats)
-    return file_stats
+    file_equal = True
+    for var_name, is_categorical in sorted(var_names.items()):
+        try:
+            var_ref = read_var(nc_ref, var_name)
+        except Exception as e:
+            logging.info(f'"{var_name}" not found or problem opening: {e}. Ignoring.')
+            continue
+        var_cmp = read_var(nc_cmp, var_name)
 
-def merge_stats(stats1: MergedStats, stats2: Union[Stats,MergedStats]) -> MergedStats:
-    try:
-        ratio = stats2.category_mismatch_ratio
-    except AttributeError:
-        ratio = stats2.max_category_mismatch_ratio
-    return MergedStats(
-        stats1.equal and stats2.equal,
-        max(stats1.max_rel_diff, stats2.max_rel_diff),
-        max(stats1.mean_rel_diff, stats2.mean_rel_diff),
-        max(stats1.max_category_mismatch_ratio, ratio))
+        tol = tol_categorical if is_categorical else tol_continuous
 
-def is_identical(stats: MergedStats) -> bool:
-    return stats.max_rel_diff == 0 and stats.max_category_mismatch_ratio == 0
+        try:
+            var_equal = compare_var(var_ref, var_cmp, var_name, is_categorical, no_data, tol, mean)
+        except Exception as e:
+            logging.error(f'Error processing "{var_name}": {e}', exc_info=e)
+            var_equal = False
+        file_equal = file_equal and var_equal
+    return file_equal

@@ -36,8 +36,8 @@ def link(src: Path, dst: Path) -> None:
     else:
         link_folder(src, dst)
 
-def get_log_level(stats):
-    if stats.equal:
+def get_log_level(equal: bool):
+    if equal:
         return SUCCESS_LOG_LEVEL
     else:
         return logging.ERROR

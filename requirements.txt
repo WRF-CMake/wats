@@ -3,3 +3,4 @@ colorama
 requests
 numpy
 netCDF4
+wrf-python

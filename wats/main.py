@@ -22,6 +22,51 @@ from wats import nccmp
 WPS_CASES_DIR = ROOT_DIR / 'cases' / 'wps'
 WRF_CASES_DIR = ROOT_DIR / 'cases' / 'wrf'
 
+WRF_NODATA = 32768.0
+
+WPS_CATEGORICAL = set([
+    'LANDSEA',
+    'LANDMASK', 
+    'LU_INDEX',
+    'SCB_DOM',
+    'SCT_DOM',
+])
+
+WRF_CATEGORICAL = set([
+    'LANDMASK',
+    'LAKEMASK',    
+    'XLAND',
+    'LU_INDEX',
+    'ISLTYP',
+    'IVGTYP',
+    'NEST_POS',
+])
+
+# Continuous variables of ratio type (see https://en.wikipedia.org/wiki/Level_of_measurement).
+WPS_CONTINUOUS = set([
+    'HGT_M',
+    'GHT',
+    'HGTMAXW',
+    'HGTTROP',
+    'SOILHGT',
+    'SOILTEMP',
+    'PMAXW',
+    'PMSL',
+    'PSFC',
+    'PTROP',
+    'SKINTEMP',
+    'SNOWH',
+    'TT',
+    'TTROP'
+])
+
+WRF_CONTINUOUS = set([
+    'pressure',
+    'geopotential',
+    'theta',
+    'TKE'
+])
+
 def get_case_name(nml_path: Path) -> str:
     return str(nml_path).split('.')[-1]
 
@@ -172,49 +217,43 @@ def run_cases(mode: str, use_mpi: bool, wrf_dir: Path, wrf_case: Optional[str], 
                 continue
             run_wrf_case(path, wps_case_output_dir, wrf_dir, work_dir, use_mpi)
 
-def diff_cases(mode: str, left_dir: Path, right_dir: Path, tol: float, mean: bool) -> None:
+def diff_cases(mode: str, ref_dir: Path, cmp_dir: Path,
+               tol_continuous: float, tol_categorical: float,
+               mean: bool) -> bool:
     aggr_str = 'average' if mean else 'per-pixel'
-    logging.info('Comparing {} <-> {}'.format(left_dir, right_dir))
-    logging.info('Maximum allowed relative {} difference: {:.2e}'.format(aggr_str, tol))
-    logging.info('Maximum allowed categorical mismatch (percentage of all pixels): {:.4f}%'.format(tol*100))   
+    logging.info('Comparing {} (reference) <-> {}'.format(ref_dir, cmp_dir))
+    logging.info('Maximum allowed relative {} difference: {:.4f}%'.format(aggr_str, tol_continuous*100))
+    logging.info('Maximum allowed categorical mismatch (percentage of all pixels): {:.4f}%'.format(tol_categorical))   
 
     exclude_files = ['.git', '.log', 'rsl.']
+
+    if mode == 'wps':
+        vars_categorical = WPS_CATEGORICAL
+        vars_continuous = WPS_CONTINUOUS
+    else:
+        vars_categorical = WRF_CATEGORICAL
+        vars_continuous = WRF_CONTINUOUS
     
-    dir_stats = nccmp.MergedStats(True, 0.0, 0.0, 0.0)
-    for left_path in left_dir.glob('{}/**/*'.format(mode)):
-        if not left_path.is_file():
+    dir_equal = True
+    for ref_path in ref_dir.glob('{}/**/*'.format(mode)):
+        if not ref_path.is_file():
             continue
-        if any(part in str(left_path) for part in exclude_files):
+        if any(part in str(ref_path) for part in exclude_files):
             continue
-        rel_path = left_path.relative_to(left_dir)
-        right_path = right_dir / rel_path
+        rel_path = ref_path.relative_to(ref_dir)
+        cmp_path = cmp_dir / rel_path
         logging.info('')
         logging.info('Comparing {}'.format(rel_path))
         
-        file_stats = nccmp.compare(left_path, right_path, tol, mean)
-        
-        if nccmp.is_identical(file_stats):
-            logging.log(get_log_level(file_stats), "No diff for {}".format(rel_path))
-        else: 
-            logging.log(get_log_level(file_stats),
-                "Max diff over all variables for {}: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch={:.4f}%{}".format(
-                    rel_path,
-                    file_stats.max_rel_diff, file_stats.mean_rel_diff, file_stats.max_category_mismatch_ratio*100,
-                    '' if file_stats.equal else ' -> ABOVE THRESHOLD'))
+        file_equal = nccmp.compare(ref_path, cmp_path,
+            vars_categorical, vars_continuous, WRF_NODATA,
+            tol_continuous, tol_categorical, mean)
 
-        dir_stats = nccmp.merge_stats(dir_stats, file_stats)
+        dir_equal = dir_equal and file_equal
     
-    logging.info('')
-    if nccmp.is_identical(dir_stats):
-        logging.log(get_log_level(dir_stats), "No diff in any file!")
-    else:
-        logging.log(get_log_level(dir_stats),
-            "Max diff over all files: max_rel={:.2e} mean_rel={:.2e} max_cat_mismatch={:.4f}%{}".format(
-                dir_stats.max_rel_diff, dir_stats.mean_rel_diff, dir_stats.max_category_mismatch_ratio*100,
-                '' if dir_stats.equal else ' -> ABOVE THRESHOLD'))
-    
-    if not dir_stats.equal:
-        raise RuntimeError('At least one file exceeded the allowed thresholds')
+    if not dir_equal:
+        logging.error('At least one file exceeded the allowed thresholds')
+    return dir_equal
     
 if __name__ == '__main__':
     init_logging()
@@ -240,20 +279,25 @@ if __name__ == '__main__':
                             help='Directory to store WRF/WPS output files')
 
     diff_parser = subparsers.add_parser('diff')
-    diff_parser.add_argument('left_dir', type=as_path,
-                             help='Left output directory')
-    diff_parser.add_argument('right_dir', type=as_path,
-                             help='Right output directory')
+    diff_parser.add_argument('ref_dir', type=as_path,
+                             help='Reference output directory')
+    diff_parser.add_argument('cmp_dir', type=as_path,
+                             help='Comparison output directory')
     diff_parser.add_argument('--mode', required=True, choices=['wps', 'wrf'], help='whether to run/diff WPS or WRF cases')
-    diff_parser.add_argument('--tol', default=0.01, type=float,
-                            help='Maximum relative difference after which an error is raised')
-    diff_parser.add_argument('--per-pixel', action='store_true',
-                            help='Consider each pixel separate for comparison (default is average over all pixels)')
+    diff_parser.add_argument('--tol-continuous', default=0.01, type=float,
+                            help='Maximum relative error in percent for continuous variables')
+    diff_parser.add_argument('--tol-categorical', default=0.01, type=float,
+                            help='Maximum percentage mismatch over all points for categorical variables')
+    diff_parser.add_argument('--per-pixel-continuous', action='store_true',
+                            help='Consider each pixel separate for comparison of continuous variables (default is average over all pixels)')
 
     args = parser.parse_args()
     if args.subparser_name == 'run':
         run_cases(args.mode, args.mpi, args.wrf_dir, args.wrf_case, args.wps_dir, args.wps_case_output_dir, args.work_dir)
     elif args.subparser_name == 'diff':
-        diff_cases(args.mode, args.left_dir, args.right_dir, args.tol, not args.per_pixel)
+        equal = diff_cases(args.mode, args.ref_dir, args.cmp_dir, args.tol_continuous/100, args.tol_categorical,
+            not args.per_pixel_continuous)
+        if not equal:
+            sys.exit(1)
     else:
         assert False
