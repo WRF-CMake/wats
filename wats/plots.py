@@ -1,5 +1,6 @@
 # Copyright 2018 M. Riechert and D. Meyer. Licensed under the MIT License.
 
+from typing import Tuple
 import os
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ import scipy.stats
 import netCDF4 as nc
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cb
+from matplotlib.markers import MarkerStyle
 
 THIS_DIR = Path(__file__).absolute().parent
 ROOT_DIR = THIS_DIR.parent
@@ -30,6 +32,11 @@ BOXPLOT_VAR_NAMES = [
 KL_DIV_VAR_NAMES = [
     'pressure',
     'theta',
+]
+
+KL_DIV_VAR_LABELS = [
+    'P',
+    'T'
 ]
 
 def normalise(arr: np.array) -> np.array:
@@ -81,7 +88,6 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
         trial_freq, _ = np.histogram(trial_concat, bins=bin_count, range=(hist_min, hist_max), density=True)
         kl_div = scipy.stats.entropy(trial_freq, ref_freq)
         kl_divs.append(kl_div)
-    kl_divs_norm = normalise(np.asarray(kl_divs))
 
     logging.info('Computing boxplot stats')
     boxplot_stats = cb.boxplot_stats(rel_errs)
@@ -97,7 +103,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
         stats = []
     
     trial_name = trial_dir.name
-    stats.append((trial_name, boxplot_stats, kl_divs_norm))
+    stats.append((trial_name, boxplot_stats, kl_divs))
     
     with open(stats_path, 'wb') as fp:
         pickle.dump(stats, fp)
@@ -107,21 +113,46 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     boxplot_path = out_dir / 'boxplot.png'
     kl_div_path = out_dir / 'kl_div.png'
 
+    logging.info('Loading stats')
     with open(stats_path, 'rb') as fp:
         stats = pickle.load(fp)
 
+    def parse_trial_name(name: str) -> Tuple[str, str, str, str]:
+        parts = name.split('_')
+        return {'os': parts[1], 'build_system': parts[2], 'build_type': parts[3], 'mode': parts[4]}
+
+    trial_names = [s[0] for s in stats]
+    for trial_idx, trial_name in enumerate(trial_names):
+        print(f'{trial_idx}: {trial_name}')
+
     logging.info('Creating boxplot')
-    boxplot_stats = [s[1] for s in stats]
+    boxplot_stats_all_trials = [s[1] for s in stats]
     boxplot_fig, boxplot_ax = plt.subplots()
     boxplot_ax.set_title('Foo')
-    boxplot_ax.bxp(boxplot_stats)
+    boxplot_ax.bxp(boxplot_stats_all_trials)
+    boxplot_ax.set_xticklabels(range(len(trial_names)))
     boxplot_fig.savefig(boxplot_path)
 
     logging.info('Creating Kullback-Leibler divergence plot')
-    kl_divs = [s[2] for s in stats]
+    kl_divs_all_trials = np.asarray([s[2] for s in stats])
+    assert kl_divs_all_trials.shape == (len(trial_names), len(KL_DIV_VAR_NAMES))
+    # normalise each quantity to [0,1]
+    for trial_idx in range(len(KL_DIV_VAR_NAMES)):
+        kl_divs_all_trials[:,trial_idx] = normalise(kl_divs_all_trials[:,trial_idx])
+    
+    def get_scatter_style(trial: dict) -> Tuple[str,str,str]:
+        colors = {'Linux': 'black', 'macOS': 'green', 'Windows': 'blue'}
+        markers = {'Make': 'o', 'CMake': '^'}
+        fillstyles = {'Debug': 'none', 'Release': 'full'}
+        # TODO need one more for 'mode'
+        foo = {'serial': '?', 'smpar': '?', 'dmpar': '?', 'dm_sm': '?'}
+        return colors[trial['os']], markers[trial['build_system']], fillstyles[trial['build_type']]
+
     kl_fig, kl_ax = plt.subplots()
-    for kl_div in kl_divs:
-        kl_ax.scatter(KL_DIV_VAR_NAMES, kl_div)
+    for trial_idx, kl_divs in enumerate(kl_divs_all_trials):
+        trial = parse_trial_name(trial_names[trial_idx])
+        color, marker, fillstyle = get_scatter_style(trial)
+        kl_ax.scatter(KL_DIV_VAR_LABELS, kl_divs, c=color, marker=MarkerStyle(marker, fillstyle))
     kl_fig.savefig(kl_div_path)
 
 if __name__ == '__main__':
@@ -136,8 +167,8 @@ if __name__ == '__main__':
     prepare_parser = subparsers.add_parser('compute')
     prepare_parser.add_argument('ref_dir', type=as_path,
                              help='Reference output directory')
-    prepare_parser.add_argument('trial_dir', type=as_path,
-                             help='Trial output directory')
+    prepare_parser.add_argument('trial_dirs', type=as_path, nargs='+',
+                             help='Trial output directories')
     prepare_parser.add_argument('--out-dir', type=as_path, default=ROOT_DIR / 'stats',
                              help='Output directory for computed statistics')
 
@@ -152,7 +183,8 @@ if __name__ == '__main__':
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.subparser_name == 'compute':
-        compute_and_append_stats(args.ref_dir, args.trial_dir, args.out_dir)
+        for trial_dir in args.trial_dirs:
+            compute_and_append_stats(args.ref_dir, trial_dir, args.out_dir)
     elif args.subparser_name == 'plot':
         plot(args.stats_dir, args.out_dir)
     else:

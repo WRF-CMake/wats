@@ -245,7 +245,7 @@ def diff_cases(mode: str, ref_dir: Path, trial_dir: Path,
         logging.info('')
         logging.info('Comparing {}'.format(rel_path))
         
-        file_equal = nctrial.compare(ref_path, trial_path,
+        file_equal = nccmp.compare(ref_path, trial_path,
             vars_categorical, vars_continuous, WRF_NODATA,
             tol_continuous, tol_categorical, mean)
 
