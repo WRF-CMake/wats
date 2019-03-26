@@ -13,9 +13,9 @@ from wats.util import get_log_level
 
 def read_var(ds: nc.Dataset, name: str) -> np.array:
     if name == 'TKE':
-        u = wrf.getvar(ds, 'U', wrf.ALL_TIMES, squeeze=False)
-        v = wrf.getvar(ds, 'V', wrf.ALL_TIMES, squeeze=False)
-        w = wrf.getvar(ds, 'W', wrf.ALL_TIMES, squeeze=False)
+        u = wrf.getvar(ds, 'U', wrf.ALL_TIMES, squeeze=False).values
+        v = wrf.getvar(ds, 'V', wrf.ALL_TIMES, squeeze=False).values
+        w = wrf.getvar(ds, 'W', wrf.ALL_TIMES, squeeze=False).values
         dims = ds.dimensions
         bottom_top = dims['bottom_top'].size
         south_north = dims['south_north'].size
@@ -28,7 +28,7 @@ def read_var(ds: nc.Dataset, name: str) -> np.array:
         try:
             var = ds.variables[name][:]
         except KeyError:
-            var = wrf.getvar(ds, name, wrf.ALL_TIMES)[:]
+            var = wrf.getvar(ds, name, wrf.ALL_TIMES).values
     return var
 
 def calc_rel_error(var_ref: np.array, var_trial: np.array) -> np.array:
