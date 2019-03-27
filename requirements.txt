@@ -6,3 +6,4 @@ scipy
 netCDF4
 wrf-python
 matplotlib
+seaborn

@@ -14,6 +14,10 @@ import netCDF4 as nc
 import matplotlib.pyplot as plt
 import matplotlib.cbook as cb
 from matplotlib.markers import MarkerStyle
+import seaborn as sns
+
+sns.set_context('paper')
+sns.set_style('ticks')
 
 THIS_DIR = Path(__file__).absolute().parent
 ROOT_DIR = THIS_DIR.parent
@@ -29,14 +33,19 @@ BOXPLOT_VAR_NAMES = [
     'TKE',
 ]
 
+# TODO: add all continuous vars
 KL_DIV_VAR_NAMES = [
     'pressure',
     'theta',
+    'ua',
+    'va'
 ]
 
 KL_DIV_VAR_LABELS = [
     'P',
-    'T'
+    'T',
+    'U',
+    'V'
 ]
 
 def normalise(arr: np.array) -> np.array:
@@ -64,7 +73,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
             var_trial = read_var(nc_trial, var_name)
             var_ref_all[var_name].append(var_ref.ravel())
             var_trial_all[var_name].append(var_trial.ravel())
-        
+
         for var_name in BOXPLOT_VAR_NAMES:
             logging.info(f'  Summary statistics: reading {var_name} & computing relative error')
             var_ref = read_var(nc_ref, var_name)
@@ -72,7 +81,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
             rel_err = calc_rel_error(var_ref, var_trial)
             rel_errs.append(rel_err.ravel())
     rel_errs = np.concatenate(rel_errs)
-    
+
     logging.info('All data read')
 
     logging.info('Computing Kullback-Leibler divergence')
@@ -93,7 +102,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
     boxplot_stats = cb.boxplot_stats(rel_errs)
     assert len(boxplot_stats) == 1
     boxplot_stats = boxplot_stats[0]
-    
+
     logging.info('Storing stats')
     stats_path = out_dir / 'stats.pkl'
     if os.path.exists(stats_path):
@@ -101,10 +110,10 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
             stats = pickle.load(fp)
     else:
         stats = []
-    
+
     trial_name = trial_dir.name
     stats.append((trial_name, boxplot_stats, kl_divs))
-    
+
     with open(stats_path, 'wb') as fp:
         pickle.dump(stats, fp)
 
@@ -118,7 +127,7 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
         stats = pickle.load(fp)
 
     def parse_trial_name(name: str) -> Tuple[str, str, str, str]:
-        parts = name.split('_')
+        parts = name.split('_', maxsplit=4) # Restrict for case of 'dm_sm'
         return {'os': parts[1], 'build_system': parts[2], 'build_type': parts[3], 'mode': parts[4]}
 
     trial_names = [s[0] for s in stats]
@@ -128,7 +137,9 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     logging.info('Creating boxplot')
     boxplot_stats_all_trials = [s[1] for s in stats]
     boxplot_fig, boxplot_ax = plt.subplots()
-    boxplot_ax.set_title('Foo')
+    boxplot_ax.set_xlabel('Trial number in 1')
+    boxplot_ax.set_ylabel(r'$\eta$' + ' in 1')
+    sns.despine()
     boxplot_ax.bxp(boxplot_stats_all_trials)
     boxplot_ax.set_xticklabels(range(len(trial_names)))
     boxplot_fig.savefig(boxplot_path)
@@ -139,20 +150,22 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     # normalise each quantity to [0,1]
     for trial_idx in range(len(KL_DIV_VAR_NAMES)):
         kl_divs_all_trials[:,trial_idx] = normalise(kl_divs_all_trials[:,trial_idx])
-    
-    def get_scatter_style(trial: dict) -> Tuple[str,str,str]:
-        colors = {'Linux': 'black', 'macOS': 'green', 'Windows': 'blue'}
-        markers = {'Make': 'o', 'CMake': '^'}
-        fillstyles = {'Debug': 'none', 'Release': 'full'}
-        # TODO need one more for 'mode'
-        foo = {'serial': '?', 'smpar': '?', 'dmpar': '?', 'dm_sm': '?'}
-        return colors[trial['os']], markers[trial['build_system']], fillstyles[trial['build_type']]
+
+    def get_scatter_style(trial: dict) -> Tuple[str,str,str,float]:
+        fillstyles = {'Make': 'top', 'CMake': 'full'}
+        colors = {'Linux': '#33a02c', 'macOS': '#fb9a99', 'Windows': '#1f78b4'}
+        alpha = {'Debug': 1, 'Release': 0.5}
+        markers = {'serial': 'o', 'smpar': '^', 'dmpar': 's', 'dm_sm': 'D'}
+        return colors[trial['os']], markers[trial['mode']], fillstyles[trial['build_system']], alpha[trial['build_type']]
 
     kl_fig, kl_ax = plt.subplots()
     for trial_idx, kl_divs in enumerate(kl_divs_all_trials):
         trial = parse_trial_name(trial_names[trial_idx])
-        color, marker, fillstyle = get_scatter_style(trial)
-        kl_ax.scatter(KL_DIV_VAR_LABELS, kl_divs, c=color, marker=MarkerStyle(marker, fillstyle))
+        color, marker, fillstyle, alpha = get_scatter_style(trial)
+        kl_ax.scatter(KL_DIV_VAR_LABELS, kl_divs, s=500, c=color, marker=MarkerStyle(marker, fillstyle), alpha=alpha, edgecolors='k', linewidth=1, label=trial_idx)
+    sns.despine()
+    kl_ax.set_xlabel('Variable name in 1')
+    kl_ax.set_ylabel('Normalised KL Divergence in 1')
     kl_fig.savefig(kl_div_path)
 
 if __name__ == '__main__':
@@ -161,7 +174,7 @@ if __name__ == '__main__':
     def as_path(path: str) -> Path:
         return Path(path).absolute()
 
-    parser = argparse.ArgumentParser()    
+    parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='subparser_name')
 
     prepare_parser = subparsers.add_parser('compute')
