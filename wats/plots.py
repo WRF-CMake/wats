@@ -102,6 +102,10 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
     boxplot_stats = cb.boxplot_stats(rel_errs)
     assert len(boxplot_stats) == 1
     boxplot_stats = boxplot_stats[0]
+    # There may be many outliers very close together.
+    # This increases memory usage for plotting considerably and increases data size.
+    # Let's remove all duplicates that we don't need.
+    boxplot_stats['fliers'] = np.unique(boxplot_stats['fliers'].round(decimals=5))
 
     logging.info('Storing stats')
     stats_path = out_dir / 'stats.pkl'
@@ -137,12 +141,12 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     logging.info('Creating boxplot')
     boxplot_stats_all_trials = [s[1] for s in stats]
     boxplot_fig, boxplot_ax = plt.subplots()
-    boxplot_ax.set_xlabel('Trial number in 1')
+    boxplot_ax.set_xlabel('Trial number')
     boxplot_ax.set_ylabel(r'$\eta$' + ' in 1')
-    sns.despine()
+    sns.despine(boxplot_fig)
     boxplot_ax.bxp(boxplot_stats_all_trials)
     boxplot_ax.set_xticklabels(range(len(trial_names)))
-    boxplot_fig.savefig(boxplot_path)
+    boxplot_fig.savefig(boxplot_path, dpi=200)
 
     logging.info('Creating Kullback-Leibler divergence plot')
     kl_divs_all_trials = np.asarray([s[2] for s in stats])
@@ -152,21 +156,23 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
         kl_divs_all_trials[:,trial_idx] = normalise(kl_divs_all_trials[:,trial_idx])
 
     def get_scatter_style(trial: dict) -> Tuple[str,str,str,float]:
-        fillstyles = {'Make': 'top', 'CMake': 'full'}
-        colors = {'Linux': '#33a02c', 'macOS': '#fb9a99', 'Windows': '#1f78b4'}
+        fillstyle = {'Make': 'top', 'CMake': 'full'}
+        color = {'Linux': '#33a02c', 'macOS': '#fb9a99', 'Windows': '#1f78b4'}
         alpha = {'Debug': 1, 'Release': 0.5}
-        markers = {'serial': 'o', 'smpar': '^', 'dmpar': 's', 'dm_sm': 'D'}
-        return colors[trial['os']], markers[trial['mode']], fillstyles[trial['build_system']], alpha[trial['build_type']]
+        marker = {'serial': 'o', 'smpar': '^', 'dmpar': 's', 'dm_sm': 'D'}
+        return color[trial['os']], marker[trial['mode']], fillstyle[trial['build_system']], alpha[trial['build_type']]
 
     kl_fig, kl_ax = plt.subplots()
     for trial_idx, kl_divs in enumerate(kl_divs_all_trials):
         trial = parse_trial_name(trial_names[trial_idx])
         color, marker, fillstyle, alpha = get_scatter_style(trial)
-        kl_ax.scatter(KL_DIV_VAR_LABELS, kl_divs, s=500, c=color, marker=MarkerStyle(marker, fillstyle), alpha=alpha, edgecolors='k', linewidth=1, label=trial_idx)
-    sns.despine()
-    kl_ax.set_xlabel('Variable name in 1')
+        kl_ax.scatter(KL_DIV_VAR_LABELS, kl_divs, label=trial_idx,
+                      s=500, edgecolors='k', linewidth=1, 
+                      c=color, marker=MarkerStyle(marker, fillstyle), alpha=alpha)
+    sns.despine(kl_fig)
+    kl_ax.set_xlabel('Variable name')
     kl_ax.set_ylabel('Normalised KL Divergence in 1')
-    kl_fig.savefig(kl_div_path)
+    kl_fig.savefig(kl_div_path, dpi=200)
 
 if __name__ == '__main__':
     init_logging()
