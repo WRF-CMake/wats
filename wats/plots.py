@@ -33,19 +33,24 @@ BOXPLOT_VAR_NAMES = [
     'TKE',
 ]
 
-# TODO: add all continuous vars
 KL_DIV_VAR_NAMES = [
     'pressure',
+    'geopt',
     'theta',
     'ua',
-    'va'
+    'va',
+    'wa',
+    'QVAPOR'
 ]
 
 KL_DIV_VAR_LABELS = [
-    'P',
-    'T',
-    'U',
-    'V'
+    r'$p$',
+    r'$\phi$',
+    r'$\theta$',
+    r'$u$',
+    r'$v$',
+    r'$w$',
+    r'$q_{v}\,$'
 ]
 
 def normalise(arr: np.array) -> np.array:
@@ -86,7 +91,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
 
     logging.info('Computing Kullback-Leibler divergence')
     kl_divs = []
-    bin_count = 20
+    bin_count = 100
     for var_name in KL_DIV_VAR_NAMES:
         logging.info(f'  Processing {var_name}')
         ref_concat = np.concatenate(var_ref_all[var_name])
@@ -140,13 +145,13 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
 
     logging.info('Creating boxplot')
     boxplot_stats_all_trials = [s[1] for s in stats]
-    boxplot_fig, boxplot_ax = plt.subplots()
+    boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6),  dpi=300)
     boxplot_ax.set_xlabel('Trial number')
-    boxplot_ax.set_ylabel(r'$\eta$' + ' in 1')
+    boxplot_ax.set_ylabel(r'$\eta$' + '/1')
     sns.despine(boxplot_fig)
     boxplot_ax.bxp(boxplot_stats_all_trials)
     boxplot_ax.set_xticklabels(range(len(trial_names)))
-    boxplot_fig.savefig(boxplot_path, dpi=200)
+    boxplot_fig.savefig(boxplot_path)
 
     logging.info('Creating Kullback-Leibler divergence plot')
     kl_divs_all_trials = np.asarray([s[2] for s in stats])
@@ -155,23 +160,38 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     for trial_idx in range(len(KL_DIV_VAR_NAMES)):
         kl_divs_all_trials[:,trial_idx] = normalise(kl_divs_all_trials[:,trial_idx])
 
-    def get_scatter_style(trial: dict) -> Tuple[str,str,str,float]:
-        fillstyle = {'Make': 'top', 'CMake': 'full'}
+    def get_scatter_style(trial: dict) -> Tuple[str,str,float]:
         color = {'Linux': '#33a02c', 'macOS': '#fb9a99', 'Windows': '#1f78b4'}
-        alpha = {'Debug': 1, 'Release': 0.5}
         marker = {'serial': 'o', 'smpar': '^', 'dmpar': 's', 'dm_sm': 'D'}
-        return color[trial['os']], marker[trial['mode']], fillstyle[trial['build_system']], alpha[trial['build_type']]
+        linewidth = {'Debug': 0, 'Release': 1}
+        return color[trial['os']], marker[trial['mode']], linewidth[trial['build_type']]
 
-    kl_fig, kl_ax = plt.subplots()
+    # We want to have 2 labels for each quantity and plot them next to each other
+    # to differentiate more easily between the Make and CMake varant.
+    kl_div_var_labels = []
+    for name in KL_DIV_VAR_LABELS:
+        kl_div_var_labels.append(name + r'$_{\mathrm{Make}}$')
+        kl_div_var_labels.append(name + r'$_{\mathrm{CMake}}$')
+
+    kl_fig, kl_ax = plt.subplots(figsize=(10,6),  dpi=300)
     for trial_idx, kl_divs in enumerate(kl_divs_all_trials):
         trial = parse_trial_name(trial_names[trial_idx])
-        color, marker, fillstyle, alpha = get_scatter_style(trial)
-        kl_ax.scatter(KL_DIV_VAR_LABELS, kl_divs, label=trial_idx,
-                      s=500, edgecolors='k', linewidth=1, 
-                      c=color, marker=MarkerStyle(marker, fillstyle), alpha=alpha)
+
+        # To plot Make and CMake next to each other for each variable
+        kl_divs_make_cmake = np.empty(len(kl_div_var_labels))
+        kl_divs_make_cmake.fill(np.nan)
+        if trial['build_system'] == 'Make':
+            kl_divs_make_cmake[::2] = kl_divs[:]
+        if trial['build_system'] == 'CMake':
+            kl_divs_make_cmake[1::2] = kl_divs[:]
+
+        color, marker, linewidth = get_scatter_style(trial)
+        kl_ax.scatter(kl_div_var_labels, kl_divs_make_cmake, label=trial_idx,
+                        s=150, edgecolors='k', linewidth=linewidth,
+                        c=color, marker=marker, alpha=0.5)
     sns.despine(kl_fig)
-    kl_ax.set_xlabel('Variable name')
-    kl_ax.set_ylabel('Normalised KL Divergence in 1')
+    kl_ax.set_xlabel('Quantity')
+    kl_ax.set_ylabel(r'$\hat{\nabla}_{\mathrm{KL}}$'+ '/1')
     kl_fig.savefig(kl_div_path, dpi=200)
 
 if __name__ == '__main__':
