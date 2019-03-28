@@ -1,5 +1,5 @@
  &time_control
-run_hours = 3,
+run_minutes = 5,
 nocolons = .true.
 start_year = 2016, 2016,
 start_month = 03, 03,
