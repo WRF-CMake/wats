@@ -187,8 +187,10 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
 
         color, marker, linewidth = get_scatter_style(trial)
         kl_ax.scatter(kl_div_var_labels, kl_divs_make_cmake, label=trial_idx,
-                        s=150, edgecolors='k', linewidth=linewidth,
-                        c=color, marker=marker, alpha=0.5)
+                s=150, edgecolors='k', linewidth=linewidth, c=color, marker=marker, alpha=0.5)
+        # FIXME: at the top of each quantity we should show the max un-normalized KL value (in nats)
+        if trial_idx in range(0,len(kl_div_var_labels),2):
+            kl_ax.annotate(r'$\nabla_{\mathrm{KL\, max =\,}}$' + f'{trial_idx} FIXME', (trial_idx, 1.05))
     sns.despine(kl_fig)
     kl_ax.set_xlabel('Quantity')
     kl_ax.set_ylabel(r'$\hat{\nabla}_{\mathrm{KL}}$'+ '/1')
