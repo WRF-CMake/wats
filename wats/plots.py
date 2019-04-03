@@ -25,6 +25,7 @@ sys.path.append(str(ROOT_DIR))
 
 from wats.util import init_logging
 from wats.nccmp import read_var, calc_rel_error
+from wats.boxplot import ExtendedBoxplotStats, plot_extended_boxplot
 
 BOXPLOT_VAR_NAMES = [
     'pressure',
@@ -83,6 +84,10 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
             logging.info(f'  Summary statistics: reading {var_name} & computing relative error')
             var_ref = read_var(nc_ref, var_name)
             var_trial = read_var(nc_trial, var_name)
+            small = np.count_nonzero(np.abs(var_ref) < 0.01)
+            if small > 0:
+                logging.warn('  Found {} ref values < 0.01. Min: {}, Max: {}'.format(
+                    small, np.min(var_ref), np.max(var_ref)))
             rel_err = calc_rel_error(var_ref, var_trial)
             rel_errs.append(rel_err.ravel())
     rel_errs = np.concatenate(rel_errs)
@@ -104,13 +109,16 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
         kl_divs.append(kl_div)
 
     logging.info('Computing boxplot stats')
-    boxplot_stats = cb.boxplot_stats(rel_errs)
+    boxplot_stats = cb.boxplot_stats(rel_errs, whis=[2, 98])
     assert len(boxplot_stats) == 1
     boxplot_stats = boxplot_stats[0]
     # There may be many outliers very close together.
     # This increases memory usage for plotting considerably and increases data size.
     # Let's remove all duplicates that we don't need.
     boxplot_stats['fliers'] = np.unique(boxplot_stats['fliers'].round(decimals=5))
+
+    logging.info('Computing extended boxplot stats')
+    extended_boxplot_stats = ExtendedBoxplotStats(rel_errs)
 
     logging.info('Storing stats')
     stats_path = out_dir / 'stats.pkl'
@@ -121,7 +129,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
         stats = []
 
     trial_name = trial_dir.name
-    stats.append((trial_name, boxplot_stats, kl_divs))
+    stats.append((trial_name, boxplot_stats, extended_boxplot_stats, kl_divs))
 
     with open(stats_path, 'wb') as fp:
         pickle.dump(stats, fp)
@@ -129,6 +137,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
 def plot(stats_dir: Path, out_dir: Path) -> None:
     stats_path = stats_dir / 'stats.pkl'
     boxplot_path = out_dir / 'boxplot.png'
+    ext_boxplot_path = out_dir / 'extended_boxplot.png'
     kl_div_path = out_dir / 'kl_div.png'
 
     logging.info('Loading stats')
@@ -140,11 +149,14 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
         return {'os': parts[1], 'build_system': parts[2], 'build_type': parts[3], 'mode': parts[4]}
 
     trial_names = [s[0] for s in stats]
+    boxplot_stats_all_trials = [s[1] for s in stats]
+    ext_boxplot_stats_all_trials = [s[2] for s in stats]
+    kl_divs_all_trials = np.asarray([s[3] for s in stats])
+
     for trial_idx, trial_name in enumerate(trial_names):
         print(f'{trial_idx}: {trial_name}')
 
     logging.info('Creating boxplot')
-    boxplot_stats_all_trials = [s[1] for s in stats]
     boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6),  dpi=300)
     boxplot_ax.set_xlabel('Trial number')
     boxplot_ax.set_ylabel(r'$\eta$' + '/1')
@@ -153,12 +165,23 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     boxplot_ax.set_xticklabels(range(len(trial_names)))
     boxplot_fig.savefig(boxplot_path)
 
+    logging.info('Creating extended boxplot')
+    ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6),  dpi=300)
+    ext_boxplot_ax.set_xlabel('Trial number')
+    ext_boxplot_ax.set_ylabel(r'$\eta$' + '/1')
+    sns.despine(ext_boxplot_fig)
+    plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials)
+    ext_boxplot_ax.set_xticklabels(range(len(trial_names)))
+    ext_boxplot_fig.savefig(ext_boxplot_path)
+
     logging.info('Creating Kullback-Leibler divergence plot')
-    kl_divs_all_trials = np.asarray([s[2] for s in stats])
     assert kl_divs_all_trials.shape == (len(trial_names), len(KL_DIV_VAR_NAMES))
-    # normalise each quantity to [0,1]
-    for trial_idx in range(len(KL_DIV_VAR_NAMES)):
-        kl_divs_all_trials[:,trial_idx] = normalise(kl_divs_all_trials[:,trial_idx])
+    if len(trial_names) > 1:
+        # normalise each quantity to [0,1]
+        for quantity_idx in range(len(KL_DIV_VAR_NAMES)):
+            kl_divs_all_trials[:,quantity_idx] = normalise(kl_divs_all_trials[:,quantity_idx])
+    else:
+        logging.info('  skipping per-quantity KL normalisation because only one trial given')
 
     def get_scatter_style(trial: dict) -> Tuple[str,str,float]:
         color = {'Linux': '#33a02c', 'macOS': '#fb9a99', 'Windows': '#1f78b4'}
