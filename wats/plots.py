@@ -103,6 +103,24 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
                 logging.warn('  Found {} ref values < 0.01. Min: {}, Max: {}'.format(
                     small, np.min(var_ref), np.max(var_ref)))
             rel_err = calc_rel_error(var_ref, var_trial)
+            large_err
+            large_err = np.abs(rel_err) > 0.5
+            if large_err.any():
+                logging.warn('  Found relative error > 0.5')
+                logging.warn('    Ref: {}'.format(var_ref[large_err].ravel()))
+                logging.warn('    Trial: {}'.format(var_trial[large_err].ravel()))
+                if var_name == 'TKE':
+                    for sub_var_name in ['U', 'V', 'W']:
+                        dims = nc_ref.dimensions
+                        bottom_top = dims['bottom_top'].size
+                        south_north = dims['south_north'].size
+                        west_east = dims['west_east'].size
+                        sub_var_ref = read_var(nc_ref, sub_var_name)
+                        sub_var_trial = read_var(nc_trial, sub_var_name)
+                        sub_var_ref = sub_var_ref[:,:bottom_top,:south_north,:west_east]
+                        sub_var_trial = sub_var_trial[:,:bottom_top,:south_north,:west_east]
+                        logging.warn('    Ref [{}]: {}'.format(sub_var_name, sub_var_ref[large_err].ravel()))
+                        logging.warn('    Trial [{}]: {}'.format(sub_var_name, sub_var_trial[large_err].ravel()))
             rel_err = rel_err.ravel()
             rel_errs.append(rel_err)
             logging.info(f'  Summary statistics: computing per-quantity boxplot stats')
