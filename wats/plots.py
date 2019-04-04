@@ -168,7 +168,7 @@ def plot(stats_dir: Path, out_dir: Path) -> None:
     logging.info('Creating extended boxplot')
     ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6),  dpi=300)
     ext_boxplot_ax.set_xlabel('Trial number')
-    ext_boxplot_ax.set_ylabel(r'$\eta$' + '/1')
+    ext_boxplot_ax.set_ylabel(r'$\mathbf{\eta}$' + '/1')
     sns.despine(ext_boxplot_fig)
     plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials)
     ext_boxplot_ax.set_xticklabels(range(len(trial_names)))

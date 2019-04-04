@@ -9,6 +9,8 @@ from matplotlib.collections import LineCollection
 
 class ExtendedBoxplotStats(object):
     def __init__(self, array, label=None, percentiles=[0.1, 1, 5, 25, 75, 95, 99, 99.9]):
+        array = np.asanyarray(array)
+        self.total = array.size
         self.median = np.median(array)
         self.mean = np.mean(array)
         self.percentiles = np.percentile(array, percentiles)
@@ -46,6 +48,11 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[ExtendedBoxplotStats],
     for stats, position in zip(boxplot_stats, positions):
         labels.append(stats.label if stats.label is not None else position)
 
+        print('{}: min: {}, max: {}, mean: {}, median: {}, #outliers_min={}, #outliers_max={}, #total={}'.format(
+            labels[-1], stats.min, stats.max, stats.mean, stats.median,
+            len(stats.outliers_min), len(stats.outliers_max), stats.total
+            ))
+
         # Compute the number of iterations based on the number of percentiles
         percentiles_num_iter = int(len(stats.percentiles)/2) # List of percentiles are always pairs so always a multiple of 2
 
@@ -71,26 +78,27 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[ExtendedBoxplotStats],
         # from the min and max percentiles.
         dist_outliers = (stats.percentiles.max() - stats.percentiles.min()) / 2
 
+        blue = '#67a9cf'
+
         # For the bottom
-        x_label = position + 0.03
         bottom_y = stats.percentiles[0] - dist_outliers
         bottom_y_half = stats.percentiles[0] - dist_outliers / 2
-        ax.hlines(bottom_y, x0, x1, colors='k', linestyles='solid')
-        ax.vlines(position, bottom_y, stats.percentiles[0], linestyles='dashed')
-        ax.annotate('Min: {:6.2f}'.format(stats.min), 
-                    xy=(x_label, bottom_y * 0.97), color='k')
-        ax.annotate('Outliers: {}x'.format(len(stats.outliers_min)),
-                    xy=(x_label, bottom_y_half), color='k')
+        ax.hlines(bottom_y, x0, x1, colors=blue, linestyles='solid')
+        ax.vlines(position, bottom_y, stats.percentiles[0], colors=blue, linestyles='dashed')
+        ax.annotate('{:6.2f}'.format(stats.min), 
+                    xy=(position, bottom_y - abs(bottom_y)*0.01), ha='center', va='top', color=blue)
+        ax.annotate('N={}'.format(len(stats.outliers_min)),
+                    xy=(position + 0.005, bottom_y_half), rotation=90, va='center', color=blue)
 
         # For the top
         top_y = stats.percentiles[-1] + dist_outliers
         top_y_half = stats.percentiles[-1] + dist_outliers / 2
-        ax.hlines(top_y, x0, x1, colors='k', linestyles='solid')
-        ax.vlines(position, top_y, stats.percentiles[-1], linestyles='dashed')
-        ax.annotate('Max: {:6.2f}'.format(stats.max), 
-                    xy=(x_label, top_y * 1.03), color='k')
-        ax.annotate('Outliers: {}x'.format(len(stats.outliers_max)),
-                    xy=(x_label, top_y_half), color='k')
+        ax.hlines(top_y, x0, x1, colors=blue, linestyles='solid')
+        ax.vlines(position, top_y, stats.percentiles[-1], colors=blue, linestyles='dashed')
+        ax.annotate('{:6.2f}'.format(stats.max), 
+                    xy=(position, top_y), ha='center', va='bottom', color=blue)
+        ax.annotate('N={}'.format(len(stats.outliers_max)),
+                    xy=(position + 0.005, top_y_half), rotation=90, va='center', color=blue)
 
     if manage_xticks:
         ax.set_xmargin(0.05)
