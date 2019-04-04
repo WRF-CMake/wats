@@ -103,7 +103,6 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
                 logging.warn('  Found {} ref values < 0.01. Min: {}, Max: {}'.format(
                     small, np.min(var_ref), np.max(var_ref)))
             rel_err = calc_rel_error(var_ref, var_trial)
-            large_err
             large_err = np.abs(rel_err) > 0.5
             if large_err.any():
                 logging.warn('  Found relative error > 0.5')
@@ -123,9 +122,21 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, out_dir: Path) -> N
                         logging.warn('    Trial [{}]: {}'.format(sub_var_name, sub_var_trial[large_err].ravel()))
             rel_err = rel_err.ravel()
             rel_errs.append(rel_err)
-            logging.info(f'  Summary statistics: computing per-quantity boxplot stats')
+            logging.info('  Summary statistics: computing per-quantity boxplot stats')
             boxplot_stats_per_var.append(compute_boxplot_stats(rel_err, label=var_name))
-            ext_boxplot_stats_per_var.append(compute_extended_boxplot_stats(rel_err, label=var_name))
+            ext_boxplot_stats = compute_extended_boxplot_stats(rel_err, label=var_name)
+            ext_boxplot_stats_per_var.append(ext_boxplot_stats)
+            outliers_min = ext_boxplot_stats['outliers_min']
+            outliers_max = ext_boxplot_stats['outliers_max']
+            outliers_min_sample = np.sort(outliers_min)[:1000]
+            outliers_max_sample = np.sort(outliers_max)[::-1][:1000]
+            logging.info('  Outliers (top): {}'.format(outliers_max_sample))
+            if len(outliers_max_sample) < len(outliers_max):
+                logging.info('  (truncated to 1000, total: {})'.format(len(outliers_max)))
+            logging.info('  Outliers (bottom): {}'.format(outliers_min_sample))
+            if len(outliers_min_sample) < len(outliers_min):
+                logging.info('  (truncated to 1000, total: {})'.format(len(outliers_min)))
+
         boxplot_stats_per_file[str(rel_path)] = boxplot_stats_per_var
         ext_boxplot_stats_per_file[str(rel_path)] = ext_boxplot_stats_per_var
 
