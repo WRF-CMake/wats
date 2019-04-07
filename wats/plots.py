@@ -72,7 +72,8 @@ def compute_boxplot_stats(arr: np.array, label=None) -> dict:
     boxplot_stats['fliers'] = np.unique(boxplot_stats['fliers'].round(decimals=5))
     return boxplot_stats
 
-def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path, path_filter: Optional[str]=None) -> None:
+def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
+                             path_filter: Optional[str]=None, time_idx: Optional[int]=None) -> None:
     logging.info('Reading reference and trial data for analysis')
     logging.info('Reference: {}'.format(ref_dir))
     logging.info('Trial: {}'.format(trial_dir))
@@ -96,8 +97,8 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path, p
 
         for var_name in KL_DIV_VAR_NAMES:
             logging.info(f'  Kullback-Leibler divergence: reading {var_name}')
-            var_ref = read_var(nc_ref, var_name)
-            var_trial = read_var(nc_trial, var_name)
+            var_ref = read_var(nc_ref, var_name, time_idx)
+            var_trial = read_var(nc_trial, var_name, time_idx)
             var_ref_all[var_name].append(var_ref.ravel())
             var_trial_all[var_name].append(var_trial.ravel())
 
@@ -105,8 +106,8 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path, p
         ext_boxplot_stats_per_var = []
         for var_name in BOXPLOT_VAR_NAMES:
             logging.info(f'  Summary statistics: reading {var_name} & computing relative error')
-            var_ref = read_var(nc_ref, var_name)
-            var_trial = read_var(nc_trial, var_name)
+            var_ref = read_var(nc_ref, var_name, time_idx)
+            var_trial = read_var(nc_trial, var_name, time_idx)
             small = np.count_nonzero(np.abs(var_ref) < 0.01)
             if small > 0:
                 logging.warn('  Found {} ref values < 0.01. Min: {}, Max: {}'.format(
@@ -123,8 +124,8 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path, p
                         bottom_top = dims['bottom_top'].size
                         south_north = dims['south_north'].size
                         west_east = dims['west_east'].size
-                        sub_var_ref = read_var(nc_ref, sub_var_name)
-                        sub_var_trial = read_var(nc_trial, sub_var_name)
+                        sub_var_ref = read_var(nc_ref, sub_var_name, time_idx)
+                        sub_var_trial = read_var(nc_trial, sub_var_name, time_idx)
                         sub_var_ref = sub_var_ref[:,:bottom_top,:south_north,:west_east]
                         sub_var_trial = sub_var_trial[:,:bottom_top,:south_north,:west_east]
                         logging.warn('    Ref [{}]: {}'.format(sub_var_name, sub_var_ref[large_err].ravel()))
@@ -439,18 +440,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='subparser_name')
 
-    prepare_parser = subparsers.add_parser('compute')
-    prepare_parser.add_argument('ref_dir', type=as_path,
+    compute_parser = subparsers.add_parser('compute')
+    compute_parser.add_argument('ref_dir', type=as_path,
                              help='Input reference data directory')
-    prepare_parser.add_argument('trial_dirs', type=as_paths, nargs='+',
+    compute_parser.add_argument('trial_dirs', type=as_paths, nargs='+',
                              help='Input trial data directories, supports glob patterns and ignores reference directory')
-    prepare_parser.add_argument('--filter', dest='path_filter', type=str,
+    compute_parser.add_argument('--filter', dest='path_filter', type=str,
                              help='Optional file path filter, e.g. _d01_')
-    prepare_parser.add_argument('--stats-dir', type=as_path, default=ROOT_DIR / 'stats',
+    compute_parser.add_argument('--time-idx', type=int,
+                             help='Optional time index filter, e.g. 0 for first timestep only')
+    compute_parser.add_argument('--stats-dir', type=as_path, default=ROOT_DIR / 'stats',
                              help='Output statistics directory')
-    prepare_parser.add_argument('--append', action='store_true',
+    compute_parser.add_argument('--append', action='store_true',
                              help='Whether to append to existing statistics')
-    prepare_parser.add_argument('--ref-trial-pairs', action='store_true',
+    compute_parser.add_argument('--ref-trial-pairs', action='store_true',
                              help='Whether folders are given as reference/trial pairs')
 
     plot_parser = subparsers.add_parser('plot')
@@ -484,10 +487,10 @@ if __name__ == '__main__':
             for i in range(0, len(dirs), 2):
                 ref_dir = dirs[i]
                 trial_dir = dirs[i+1]
-                compute_and_append_stats(ref_dir, trial_dir, stats_path, args.path_filter)
+                compute_and_append_stats(ref_dir, trial_dir, stats_path, args.path_filter, args.time_idx)
         else:
             for trial_dir in trial_dirs:
-                compute_and_append_stats(args.ref_dir, trial_dir, stats_path, args.path_filter)
+                compute_and_append_stats(args.ref_dir, trial_dir, stats_path, args.path_filter, args.time_idx)
     elif args.subparser_name == 'plot':
         plot(stats_path, args.plots_dir, args.trial_filter, not args.skip_detailed, args.dpi)
     else:

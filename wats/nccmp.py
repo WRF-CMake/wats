@@ -11,11 +11,11 @@ import wrf
 
 from wats.util import get_log_level
 
-def read_var(ds: nc.Dataset, name: str) -> np.array:
+def read_var(ds: nc.Dataset, name: str, time_idx: Optional[int]=None) -> np.array:
     if name == 'TKE':
-        u = wrf.getvar(ds, 'U', wrf.ALL_TIMES, squeeze=False).values
-        v = wrf.getvar(ds, 'V', wrf.ALL_TIMES, squeeze=False).values
-        w = wrf.getvar(ds, 'W', wrf.ALL_TIMES, squeeze=False).values
+        u = wrf.getvar(ds, 'U', time_idx, squeeze=False).values
+        v = wrf.getvar(ds, 'V', time_idx, squeeze=False).values
+        w = wrf.getvar(ds, 'W', time_idx, squeeze=False).values
         dims = ds.dimensions
         bottom_top = dims['bottom_top'].size
         south_north = dims['south_north'].size
@@ -26,9 +26,11 @@ def read_var(ds: nc.Dataset, name: str) -> np.array:
         var = 0.5 * (u**2 + v**2 + w**2)
     else:
         try:
+            var = wrf.getvar(ds, name, time_idx, squeeze=False).values
+        except:
             var = ds.variables[name][:]
-        except KeyError:
-            var = wrf.getvar(ds, name, wrf.ALL_TIMES).values
+            if time_idx is not None:
+                var = var[time_idx:time_idx+1]
     return var
 
 def calc_rel_error(var_ref: np.array, var_trial: np.array) -> np.array:
