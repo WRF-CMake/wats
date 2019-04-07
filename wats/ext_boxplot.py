@@ -6,31 +6,44 @@ import matplotlib.ticker as mticker
 from matplotlib.markers import MarkerStyle
 from matplotlib.patches import Rectangle
 from matplotlib.collections import LineCollection
+from matplotlib.transforms import blended_transform_factory
+
+# Extended boxplots.
+# See page 31 of http://biostat.mc.vanderbilt.edu/wiki/pub/Main/StatGraphCourse/graphscourse.pdf.
+# This type of boxplot draws multiple boxes at different percentile pairs.
+# There is no concept of whiskers or outliers.
+# If the outer percentiles do not cover the whole range, i.e. are not 0 and 100,
+# then the minimum and maximum values can be indicated.
 
 def compute_extended_boxplot_stats(array, label=None, percentiles=[0.1, 1, 5, 25, 75, 95, 99, 99.9]) -> dict:
+    ''' Alternative percentiles: [5, 12.5, 25, 37.5, 62.5, 75, 87.5, 95]
+    '''
     array = np.asanyarray(array)
     p = np.percentile(array, percentiles)
-    return {
-        'total': array.size,
-        'median': np.median(array),
-        'mean': np.mean(array),
-        'percentiles': p,
-        'min': np.min(array),
-        'max': np.max(array),
-        'outliers_min': array[array < p[0]],
-        'outliers_max': array[array > p[-1]],
-        'label': label
-    }
+    return dict(
+        median=np.median(array),
+        mean=np.mean(array),
+        percentiles=p,
+        min=np.min(array),
+        max=np.max(array),
+        values_min=array[array < p[0]],  # values between minimum and first given percentile
+        values_max=array[array > p[-1]], # values between maximum and last given percentile
+        label=label
+        )
 
 def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
                           positions: Optional[List[float]]=None,
-                          showmeans: bool=True,
+                          showmeans: bool=True, showminmax: bool=True,
+                          offscale_minmax: bool=False,
                           manage_xticks: bool=True) -> None:
     """
     Arguments like https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.bxp.html.
-    """
-    # Some code adapted from https://github.com/matplotlib/matplotlib/blob/master/lib/matplotlib/axes/_axes.py.
 
+    offscale_minmax: Whether the min/max values should be labelled and drawn
+                     at a fixed location independent of the y scale.
+                     Useful when the min/max values are very different from the outer
+                     percentiles.
+    """
     N = len(boxplot_stats)
 
     if positions is None:
@@ -40,6 +53,8 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
     
     # TODO: this could be made a function of number of percentiles
     boxplot_facecolors = ['0.25', '0.50', '0.75', 'white']
+    if any(len(stats['percentiles']) > 2*len(boxplot_facecolors) for stats in boxplot_stats):
+        raise NotImplementedError('Too many percentiles')
 
     labels = []
 
@@ -47,20 +62,30 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
         boxplot_x0 = boxplot_center - boxplot_width / 2
         return boxplot_x0
 
+    need_y_margin = False
+
+    if offscale_minmax:
+        buffer = 0.2
+        percentile_min = min(s['percentiles'][0] for s in boxplot_stats)
+        percentile_max = max(s['percentiles'][-1] for s in boxplot_stats)
+        percentile_range = abs(percentile_max - percentile_min)
+        thresh_min = percentile_min - percentile_range * buffer
+        thresh_max = percentile_max + percentile_range * buffer
+
+        tform = blended_transform_factory(ax.transData, ax.transAxes)
+        text_dist = 0.1
+        arrow_dist = 0.05
+
     for stats, position in zip(boxplot_stats, positions):
         labels.append(stats['label'] if stats['label'] is not None else position)
 
         percentiles = stats['percentiles']
 
-        #print('{}: min: {}, max: {}, mean: {}, median: {}, #outliers_min={}, #outliers_max={}, #total={}'.format(
-        #    labels[-1], stats['min'], stats['max'], stats['mean'], stats['median'],
-        #    len(stats['outliers_min']), len(stats['outliers_max']), stats['total']
-        #    ))
-
         # Compute the number of iterations based on the number of percentiles
         percentiles_num_iter = int(len(percentiles)/2) # List of percentiles are always pairs so always a multiple of 2
 
-        boxplot_width = 0.3
+        outermost_boxplot_width = 0.3
+        boxplot_width = outermost_boxplot_width
         for index in range(percentiles_num_iter):
             r = Rectangle((get_boxplot_x0(position, boxplot_width), percentiles[index]), 
                         boxplot_width, percentiles[-index-1] - percentiles[index], 
@@ -77,32 +102,40 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
         if showmeans:
             ax.plot(position, stats['mean'], marker='o', markersize=3, color="k")
 
-        # Anything which is above the min and max range of percentiles,
-        # we 'squash' into two lines which are half the percentile-range away
-        # from the min and max percentiles.
-        dist_outliers = (percentiles.max() - percentiles.min()) / 2
+        if showminmax:
+            x0 = get_boxplot_x0(position, outermost_boxplot_width)
+            x1 = x0 + outermost_boxplot_width
 
-        blue = '#67a9cf'
+            # For the bottom
+            if stats['median'] != percentiles[0]:
+                if offscale_minmax and stats['min'] < thresh_min:
+                    bottom_y = text_dist
+                    ax.annotate('{:.3f}'.format(stats['min']), 
+                        xy=(position, bottom_y), xycoords=tform,
+                        xytext=(position, bottom_y - arrow_dist), textcoords=tform,
+                        arrowprops=dict(arrowstyle='<-', facecolor='k', edgecolor='k'),
+                        ha='center', va='top', color='k')
+                    need_y_margin = True
+                else:
+                    bottom_y = stats['min']
+                    ax.hlines(bottom_y, x0, x1, colors='k', linestyles='solid')
 
-        # For the bottom
-        bottom_y = percentiles[0] - dist_outliers
-        bottom_y_half = percentiles[0] - dist_outliers / 2
-        ax.hlines(bottom_y, x0, x1, colors=blue, linestyles='solid')
-        ax.vlines(position, bottom_y, percentiles[0], colors=blue, linestyles='dashed')
-        ax.annotate('{:6.2f}'.format(stats['min']), 
-                    xy=(position, bottom_y - abs(bottom_y)*0.01), ha='center', va='top', color=blue)
-        ax.annotate('N={}'.format(len(stats['outliers_min'])),
-                    xy=(position + 0.005, bottom_y_half), rotation=90, va='center', color=blue)
+            # For the top
+            if stats['median'] != percentiles[-1]:
+                if offscale_minmax and stats['max'] > thresh_max:
+                    top_y = 1 - text_dist
+                    ax.annotate('{:.3f}'.format(stats['max']), 
+                        xy=(position, top_y), xycoords=tform,
+                        xytext=(position, top_y + arrow_dist), textcoords=tform,
+                        arrowprops=dict(arrowstyle='<-', facecolor='k', edgecolor='k'),
+                        ha='center', va='bottom', color='k')
+                    need_y_margin = True
+                else:
+                    top_y = stats['max']
+                    ax.hlines(top_y, x0, x1, colors='k', linestyles='solid')
 
-        # For the top
-        top_y = percentiles[-1] + dist_outliers
-        top_y_half = percentiles[-1] + dist_outliers / 2
-        ax.hlines(top_y, x0, x1, colors=blue, linestyles='solid')
-        ax.vlines(position, top_y, percentiles[-1], colors=blue, linestyles='dashed')
-        ax.annotate('{:6.2f}'.format(stats['max']), 
-                    xy=(position, top_y), ha='center', va='bottom', color=blue)
-        ax.annotate('N={}'.format(len(stats['outliers_max'])),
-                    xy=(position + 0.005, top_y_half), rotation=90, va='center', color=blue)
+    if need_y_margin:
+        ax.set_ymargin(0.2)
 
     if manage_xticks:
         ax.set_xmargin(0.05)
@@ -123,15 +156,12 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
 
         ax.autoscale_view()
 
-
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     dist_norm = np.random.normal(100, 30, 100000)
 
-    #plt.boxplot(dist_norm)
-
     boxplot_stats = compute_extended_boxplot_stats(dist_norm)
     fig, ax = plt.subplots()
     plot_extended_boxplot(ax, [boxplot_stats])
-    fig.savefig('foo.png', dpi=200)
+    fig.savefig('ext_boxplot_test.png', dpi=200)
