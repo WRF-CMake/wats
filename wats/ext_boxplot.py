@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+import math
 import numpy as np
 from matplotlib.axes import Axes
 import matplotlib.ticker as mticker
@@ -32,10 +33,10 @@ def compute_extended_boxplot_stats(array, label=None, percentiles=[0.1, 1, 5, 25
         )
 
 def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
-                          positions: Optional[List[float]]=None,
+                          positions: Optional[List[float]]=None, vert=True,
                           showmeans: bool=True, showminmax: bool=True,
-                          offscale_minmax: bool=False,
-                          manage_xticks: bool=True) -> None:
+                          offscale_minmax: bool=False, minmaxfmt='{:.1f}',
+                          manage_ticks: bool=True) -> None:
     """
     Arguments like https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.bxp.html.
 
@@ -56,13 +57,48 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
     if any(len(stats['percentiles']) > 2*len(boxplot_facecolors) for stats in boxplot_stats):
         raise NotImplementedError('Too many percentiles')
 
-    labels = []
+    if vert:
+        def doplot(*args, **kwargs):
+            return ax.plot(*args, **kwargs)
+        def doannotate(*args, **kwargs):
+            return ax.annotate(*args, **kwargs)
+        def dohlines(*args, **kwargs):
+            return ax.hlines(*args, **kwargs)
+        def dovlines(*args, **kwargs):
+            return ax.vlines(*args, **kwargs)
+        def doset_xmargin(*args, **kwargs):
+            return ax.set_xmargin(*args, **kwargs)
+        def doset_ymargin(*args, **kwargs):
+            return ax.set_ymargin(*args, **kwargs)
+    else:
+        def doplot(*args, **kwargs):
+            shuffled = []
+            for i in range(0, len(args), 2):
+                shuffled.extend([args[i + 1], args[i]])
+            return ax.plot(*shuffled, **kwargs)
 
-    def get_boxplot_x0(boxplot_center, boxplot_width):
-        boxplot_x0 = boxplot_center - boxplot_width / 2
-        return boxplot_x0
+        def doannotate(*args, **kwargs):
+            xy = kwargs.pop('xy')
+            xy = (xy[1], xy[0])
+            xytext = kwargs.pop('xytext', None)
+            if xytext:
+                xytext = (xytext[1], xytext[0])
+            ha_ = kwargs.pop('ha')
+            va_ = kwargs.pop('va')
+            if ha_ == 'center' and va_ == 'top':
+                ha = 'right'
+                va = 'center_baseline'
+            elif ha_ == 'center' and va_ == 'bottom':
+                ha = 'left'
+                va = 'center_baseline'
+            else:
+                raise NotImplementedError
+            return ax.annotate(*args, xy=xy, xytext=xytext, ha=ha, va=va, **kwargs)
 
-    need_y_margin = False
+        dohlines = ax.vlines
+        dovlines = ax.hlines
+        doset_xmargin = ax.set_ymargin
+        doset_ymargin = ax.set_xmargin
 
     if offscale_minmax:
         buffer = 0.2
@@ -71,11 +107,20 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
         percentile_range = abs(percentile_max - percentile_min)
         thresh_min = percentile_min - percentile_range * buffer
         thresh_max = percentile_max + percentile_range * buffer
+        gap_start = 0.8
+        gap_end = 0.85
+        gap_min_start = percentile_min - percentile_range * (buffer * gap_start)
+        gap_min_end = percentile_min - percentile_range * (buffer * gap_end)
+        gap_max_start = percentile_max + percentile_range * (buffer * gap_start)
+        gap_max_end = percentile_max + percentile_range * (buffer * gap_end)
+        gap_linewidth = 0.5
 
-        tform = blended_transform_factory(ax.transData, ax.transAxes)
-        text_dist = 0.1
-        arrow_dist = 0.05
+    def get_boxplot_x0(boxplot_center, boxplot_width):
+        boxplot_x0 = boxplot_center - boxplot_width / 2
+        return boxplot_x0
 
+    need_y_margin = False
+    labels = []
     for stats, position in zip(boxplot_stats, positions):
         labels.append(stats['label'] if stats['label'] is not None else position)
 
@@ -87,9 +132,15 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
         outermost_boxplot_width = 0.3
         boxplot_width = outermost_boxplot_width
         for index in range(percentiles_num_iter):
-            r = Rectangle((get_boxplot_x0(position, boxplot_width), percentiles[index]), 
-                        boxplot_width, percentiles[-index-1] - percentiles[index], 
-                        facecolor=boxplot_facecolors[index], fill=True, edgecolor='k')
+            x = get_boxplot_x0(position, boxplot_width)
+            y = percentiles[index]
+            width = boxplot_width
+            height = percentiles[-index-1] - percentiles[index]
+            if not vert:
+                width, height = height, width
+                x, y = y, x
+            r = Rectangle((x,y), width, height,
+                          facecolor=boxplot_facecolors[index], fill=True, edgecolor='k')
             ax.add_patch(r)
             if index + 1 < percentiles_num_iter:
                 boxplot_width = boxplot_width * 1.3
@@ -97,10 +148,10 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
         x0 = get_boxplot_x0(position, boxplot_width)
         x1 = x0 + boxplot_width
 
-        ax.hlines(stats['median'], x0, x1, colors='r', linestyles='solid')
+        dohlines(stats['median'], x0, x1, colors='r', linestyles='solid')
         
         if showmeans:
-            ax.plot(position, stats['mean'], marker='o', markersize=3, color="k")
+            doplot(position, stats['mean'], marker='o', markersize=3, color="k")
 
         if showminmax:
             x0 = get_boxplot_x0(position, outermost_boxplot_width)
@@ -109,38 +160,43 @@ def plot_extended_boxplot(ax: Axes, boxplot_stats: List[dict],
             # For the bottom
             if stats['median'] != percentiles[0]:
                 if offscale_minmax and stats['min'] < thresh_min:
-                    bottom_y = text_dist
-                    ax.annotate('{:.3f}'.format(stats['min']), 
-                        xy=(position, bottom_y), xycoords=tform,
-                        xytext=(position, bottom_y - arrow_dist), textcoords=tform,
-                        arrowprops=dict(arrowstyle='<-', facecolor='k', edgecolor='k'),
+                    dovlines(position, percentiles[0], gap_min_start, colors='k', linestyles='solid')
+                    dovlines(position, gap_min_end, thresh_min, colors='k', linestyles='solid')
+                    dy = 0.3 * (gap_min_start - gap_min_end)
+                    doplot([x0, x1], [gap_min_start - dy, gap_min_start + dy], color='k', lw=gap_linewidth)
+                    doplot([x0, x1], [gap_min_end - dy, gap_min_end + dy], color='k', lw=gap_linewidth)
+                    text_buffer = 2 * (gap_min_start - gap_min_end)
+                    doannotate(minmaxfmt.format(stats['min']), 
+                        xy=(position, thresh_min - text_buffer),
                         ha='center', va='top', color='k')
                     need_y_margin = True
                 else:
-                    bottom_y = stats['min']
-                    ax.hlines(bottom_y, x0, x1, colors='k', linestyles='solid')
+                    dovlines(position, percentiles[0], stats['min'], colors='k', linestyles='solid')
 
             # For the top
             if stats['median'] != percentiles[-1]:
                 if offscale_minmax and stats['max'] > thresh_max:
-                    top_y = 1 - text_dist
-                    ax.annotate('{:.3f}'.format(stats['max']), 
-                        xy=(position, top_y), xycoords=tform,
-                        xytext=(position, top_y + arrow_dist), textcoords=tform,
-                        arrowprops=dict(arrowstyle='<-', facecolor='k', edgecolor='k'),
+                    dovlines(position, percentiles[-1], gap_max_start, colors='k', linestyles='solid')
+                    dovlines(position, gap_max_end, thresh_max, colors='k', linestyles='solid')
+                    dy = 0.3 * (gap_max_end - gap_max_start)
+                    doplot([x0, x1], [gap_max_start - dy, gap_max_start + dy], color='k', lw=gap_linewidth)
+                    doplot([x0, x1], [gap_max_end - dy, gap_max_end + dy], color='k', lw=gap_linewidth)
+                    text_buffer = 2 * (gap_max_end - gap_max_start)
+                    doannotate(minmaxfmt.format(stats['max']), 
+                        xy=(position, thresh_max + text_buffer),
                         ha='center', va='bottom', color='k')
                     need_y_margin = True
-                else:
-                    top_y = stats['max']
-                    ax.hlines(top_y, x0, x1, colors='k', linestyles='solid')
+                else: 
+                    dovlines(position, percentiles[-1], stats['max'], colors='k', linestyles='solid')
 
     if need_y_margin:
-        ax.set_ymargin(0.2)
+        doset_ymargin(0.1)
 
-    if manage_xticks:
-        ax.set_xmargin(0.05)
+    if manage_ticks:
+        doset_xmargin(0.05)
 
-        axis = ax.xaxis
+        axis_name = "x" if vert else "y"
+        axis = getattr(ax, f"{axis_name}axis")
 
         locator = axis.get_major_locator()
         if not isinstance(axis.get_major_locator(), mticker.FixedLocator):

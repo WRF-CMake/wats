@@ -42,7 +42,7 @@ KL_DIV_VAR_NAMES = [
     'ua',
     'va',
     'wa',
-    'QVAPOR'
+    'QVAPOR' # FIXME remove
 ]
 
 KL_DIV_VAR_LABELS = [
@@ -52,7 +52,7 @@ KL_DIV_VAR_LABELS = [
     r'$u$',
     r'$v$',
     r'$w$',
-    r'$q_{v}\,$'
+    r'$q_{v}\,$' # FIXME remove
 ]
 
 def normalise(arr: np.array) -> np.array:
@@ -213,16 +213,24 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     if detailed:
         plots_detailed_dir = plots_dir / 'detailed'
         plots_detailed_dir.mkdir(exist_ok=True)
+    
+    exts = ['png', 'svg']
 
-    boxplot_path = plots_dir / 'boxplot.png'
-    ext_boxplot_path = plots_dir / 'ext_boxplot.png'
-    kl_div_path = plots_dir / 'kl_div.png'
-    pearson_path = plots_dir / 'pearson.png'
-    rmse_path = plots_dir / 'rmse.png'
-    nrmse_path = plots_dir / 'nrmse.png'
-    rmseiqr_path = plots_dir / 'rmseiqr.png'
-    mean_path = plots_dir / 'mean.png'
-    iqr_path = plots_dir / 'iqr.png'
+    def savefig(fig, path):
+        for ext in exts:
+            fig.savefig(str(path).format(ext=ext))
+
+    boxplot_path = plots_dir / 'boxplot.{ext}'
+    ext_boxplot_path = plots_dir / 'ext_boxplot.{ext}'
+    ext_boxplot_vert_path = plots_dir / 'ext_boxplot_vert.{ext}'
+    ext_boxplot_test_path = plots_dir / 'ext_boxplot_test.{ext}'
+    kl_div_path = plots_dir / 'kl_div.{ext}'
+    pearson_path = plots_dir / 'pearson.{ext}'
+    rmse_path = plots_dir / 'rmse.{ext}'
+    nrmse_path = plots_dir / 'nrmse.{ext}'
+    rmseiqr_path = plots_dir / 'rmseiqr.{ext}'
+    mean_path = plots_dir / 'mean.{ext}'
+    iqr_path = plots_dir / 'iqr.{ext}'
 
 
     offscale_minmax = True
@@ -255,18 +263,47 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     iqrs_all_trials = np.asarray([s[8] for s in stats])
     means_all_trials = np.asarray([s[9] for s in stats])
 
+    def rel_to_pct_error(stats):
+        for n in ['mean', 'med', 'q1', 'q3', 'cilo', 'cihi', 'whislo', 'whishi', 'fliers']:
+            stats[n] *= 100
+
+    def rel_to_percent_error_ext(stats):
+        for n in ['median', 'mean', 'percentiles', 'min', 'max', 'values_min', 'values_max']:
+            stats[n] *= 100
+
+    for stats in boxplot_stats_all_trials:
+        rel_to_pct_error(stats)
+    for stats_per_file in boxplot_stats_all_trials_per_file:
+        for stats_per_var in stats_per_file.values():
+            for stats in stats_per_var:
+                rel_to_pct_error(stats)
+    for stats in ext_boxplot_stats_all_trials:
+        rel_to_percent_error_ext(stats)
+    for stats_per_file in ext_boxplot_stats_all_trials_per_file:
+        for stats_per_var in stats_per_file.values():
+            for stats in stats_per_var:
+                rel_to_percent_error_ext(stats)
+
     for trial_idx, trial_name in zip(trial_idxs, trial_names):
         print(f'{trial_idx}: {trial_name}')
 
+    trial_labels = []
+    for trial_name in trial_names:
+        trial = parse_trial_name(trial_name)
+        trial_labels.append('{os}/{system}/{type}/{mode}'.format(
+            os=trial['os'], system=trial['build_system'],
+            type=trial['build_type'], mode=trial['mode']))
+
     logging.info('Creating boxplots (per-trial)')
     boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    boxplot_ax.set_xlabel('Trial number')
-    boxplot_ax.set_ylabel(r'$\mathbf{\eta}$' + '/1')
+    boxplot_ax.set_ylabel('Trial name')
+    boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(boxplot_fig)
-    boxplot_ax.bxp(boxplot_stats_all_trials)
-    boxplot_ax.set_xticklabels(trial_idxs)
+    boxplot_ax.bxp(boxplot_stats_all_trials, vert=False)
+    #boxplot_ax.set_xticklabels(trial_idxs)
+    boxplot_ax.set_yticklabels(trial_labels)
     boxplot_fig.tight_layout()
-    boxplot_fig.savefig(boxplot_path)
+    savefig(boxplot_fig, boxplot_path)
     plt.close(boxplot_fig)
 
     if detailed:
@@ -276,25 +313,53 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
             for rel_path, boxplot_stats_all_vars in boxplot_stats_per_file.items():
                 boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6))
                 boxplot_ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
-                boxplot_ax.set_xlabel('Quantity')
-                boxplot_ax.set_ylabel(r'$\mathbf{\eta}$' + '/1')
+                boxplot_ax.set_xlabel('Quantity symbol')
+                boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
                 sns.despine(boxplot_fig)
                 boxplot_ax.bxp(boxplot_stats_all_vars)
                 clean_rel_path = rel_path.replace('/', '_').replace('\\', '_')
                 boxplot_path = plots_detailed_dir / 'boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
-                boxplot_fig.savefig(boxplot_path)
+                savefig(boxplot_fig, boxplot_path)
                 plt.close(boxplot_fig)
 
     logging.info('Creating extended boxplots (per-trial)')
     ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    ext_boxplot_ax.set_xlabel('Trial number')
-    ext_boxplot_ax.set_ylabel(r'$\mathbf{\eta}$' + '/1')
+    ext_boxplot_ax.set_ylabel('Trial name')
+    ext_boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(ext_boxplot_fig)
     plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials,
-                          offscale_minmax=offscale_minmax)
+                          offscale_minmax=offscale_minmax, vert=False,
+                          showmeans=False)
+    ext_boxplot_ax.set_yticklabels(trial_labels)
+    ext_boxplot_fig.tight_layout()
+    savefig(ext_boxplot_fig, ext_boxplot_path)
+    plt.close(ext_boxplot_fig)
+
+    logging.info('Creating extended boxplots (per-trial) -- vertical')
+    ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    ext_boxplot_ax.set_xlabel('Trial number')
+    ext_boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
+    sns.despine(ext_boxplot_fig)
+    plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials,
+                          offscale_minmax=offscale_minmax, vert=True)
     ext_boxplot_ax.set_xticklabels(trial_idxs)
     ext_boxplot_fig.tight_layout()
-    ext_boxplot_fig.savefig(ext_boxplot_path)
+    savefig(ext_boxplot_fig, ext_boxplot_vert_path)
+    plt.close(ext_boxplot_fig)
+
+    logging.info('Creating extended boxplot -- for legend')
+    stats = dict(
+        median=0,
+        mean=0,
+        percentiles=[-40, -30, -20, -10, 10, 20, 30, 40],
+        min=-60,
+        max=60,
+        label=''
+        )
+    ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    plot_extended_boxplot(ext_boxplot_ax, [stats]*20, showmeans=False,
+                          offscale_minmax=False, vert=True)
+    savefig(ext_boxplot_fig, ext_boxplot_test_path)
     plt.close(ext_boxplot_fig)
 
     if detailed:
@@ -304,14 +369,14 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
             for rel_path, ext_boxplot_stats_all_vars in ext_boxplot_stats_per_file.items():
                 ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6))
                 ext_boxplot_ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
-                ext_boxplot_ax.set_xlabel('Quantity')
-                ext_boxplot_ax.set_ylabel(r'$\mathbf{\eta}$' + '/1')
+                ext_boxplot_ax.set_xlabel('Quantity symbol')
+                ext_boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
                 sns.despine(ext_boxplot_fig)
                 plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_vars,
                                       offscale_minmax=offscale_minmax)
                 clean_rel_path = rel_path.replace('/', '_').replace('\\', '_')
                 ext_boxplot_path = plots_detailed_dir / 'ext_boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
-                ext_boxplot_fig.savefig(ext_boxplot_path)
+                savefig(ext_boxplot_fig, ext_boxplot_path)
                 plt.close(ext_boxplot_fig)
 
     logging.info('Creating Kullback-Leibler divergence plot')
@@ -356,25 +421,19 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         #if trial_idx in range(0,len(kl_div_var_labels),2):
         #    kl_ax.annotate(r'$\nabla_{\mathrm{KL\, max =\,}}$' + f'{trial_idx} FIXME', (trial_idx, 1.05))
     sns.despine(kl_fig)
-    kl_ax.set_xlabel('Quantity')
+    kl_ax.set_xlabel('Quantity symbol')
     kl_ax.set_ylabel(r'$\hat{\nabla}_{\mathrm{KL}}$'+ '/1')
     kl_fig.tight_layout()
-    kl_fig.savefig(kl_div_path)
+    savefig(kl_fig, kl_div_path)
     plt.close(kl_fig)
 
     logging.info('Creating Pearson correlation coefficient heatmap plot')
-    trial_labels = []
-    for trial_name in trial_names:
-        trial = parse_trial_name(trial_name)
-        trial_labels.append('{os}/{system}/{type}/{mode}'.format(
-            os=trial['os'], system=trial['build_system'],
-            type=trial['build_type'], mode=trial['mode']))
     pearson_fig, pearson_ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(pearson_coeffs_all_trials, annot=True, fmt='.3g',
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 ax=pearson_ax)
     pearson_fig.tight_layout()
-    pearson_fig.savefig(pearson_path)
+    savefig(pearson_fig, pearson_path)
     plt.close(pearson_fig)
 
     logging.info('Creating RMSE table plot')
@@ -384,7 +443,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
                 ax=rmse_ax)
     rmse_fig.tight_layout()
-    rmse_fig.savefig(rmse_path)
+    savefig(rmse_fig, rmse_path)
     plt.close(rmse_fig)
 
     logging.info('Creating means table plot')
@@ -394,17 +453,19 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
                 ax=mean_ax)
     mean_fig.tight_layout()
-    mean_fig.savefig(mean_path)
+    savefig(mean_fig, mean_path)
     plt.close(mean_fig)
 
     logging.info('Creating NRMSE heatmap')
     nrmse_fig, nrmse_ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(rmses_all_trials / means_all_trials * 100, annot=True, fmt='.3g',
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                cbar_kws={'label': 'NRMSE in %'}, cmap='viridis',
                 ax=nrmse_ax)
-    nrmse_ax.set_title('Normalised RMSE (%)')
+    nrmse_ax.set_xlabel('Quantity symbol')
+    nrmse_ax.set_ylabel('Trial name')
     nrmse_fig.tight_layout()
-    nrmse_fig.savefig(nrmse_path)
+    savefig(nrmse_fig, nrmse_path)
     plt.close(nrmse_fig)
 
     logging.info('Creating IQR table plot')
@@ -414,7 +475,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
                 ax=iqr_ax)
     iqr_fig.tight_layout()
-    iqr_fig.savefig(iqr_path)
+    savefig(iqr_fig, iqr_path)
     plt.close(iqr_fig)
 
     logging.info('Creating RMSEIQR heatmap')
@@ -423,7 +484,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 ax=rmseiqr_ax)
     rmseiqr_fig.tight_layout()
-    rmseiqr_fig.savefig(rmseiqr_path)
+    savefig(rmseiqr_fig, rmseiqr_path)
     plt.close(rmseiqr_fig)
 
 if __name__ == '__main__':
