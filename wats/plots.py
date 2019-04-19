@@ -42,7 +42,7 @@ KL_DIV_VAR_NAMES = [
     'ua',
     'va',
     'wa',
-    'QVAPOR' # FIXME remove
+    #'QVAPOR'
 ]
 
 KL_DIV_VAR_LABELS = [
@@ -52,7 +52,7 @@ KL_DIV_VAR_LABELS = [
     r'$u$',
     r'$v$',
     r'$w$',
-    r'$q_{v}\,$' # FIXME remove
+    #r'$q_{v}\,$'
 ]
 
 def normalise(arr: np.array) -> np.array:
