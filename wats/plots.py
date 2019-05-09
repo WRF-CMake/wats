@@ -296,7 +296,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
 
     logging.info('Creating boxplots (per-trial)')
     boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    boxplot_ax.set_ylabel('Trial name')
+    boxplot_ax.set_ylabel('Trial')
     boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(boxplot_fig)
     boxplot_ax.bxp(boxplot_stats_all_trials, vert=False)
@@ -313,7 +313,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
             for rel_path, boxplot_stats_all_vars in boxplot_stats_per_file.items():
                 boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6))
                 boxplot_ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
-                boxplot_ax.set_xlabel('Quantity symbol')
+                boxplot_ax.set_xlabel('Quantity')
                 boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
                 sns.despine(boxplot_fig)
                 boxplot_ax.bxp(boxplot_stats_all_vars)
@@ -324,7 +324,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
 
     logging.info('Creating extended boxplots (per-trial)')
     ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    ext_boxplot_ax.set_ylabel('Trial name')
+    ext_boxplot_ax.set_ylabel('Trial')
     ext_boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(ext_boxplot_fig)
     plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials,
@@ -369,7 +369,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
             for rel_path, ext_boxplot_stats_all_vars in ext_boxplot_stats_per_file.items():
                 ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6))
                 ext_boxplot_ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
-                ext_boxplot_ax.set_xlabel('Quantity symbol')
+                ext_boxplot_ax.set_xlabel('Quantity')
                 ext_boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
                 sns.despine(ext_boxplot_fig)
                 plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_vars,
@@ -421,7 +421,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         #if trial_idx in range(0,len(kl_div_var_labels),2):
         #    kl_ax.annotate(r'$\nabla_{\mathrm{KL\, max =\,}}$' + f'{trial_idx} FIXME', (trial_idx, 1.05))
     sns.despine(kl_fig)
-    kl_ax.set_xlabel('Quantity symbol')
+    kl_ax.set_xlabel('Quantity')
     kl_ax.set_ylabel(r'$\hat{\nabla}_{\mathrm{KL}}$'+ '/1')
     kl_fig.tight_layout()
     savefig(kl_fig, kl_div_path)
@@ -462,8 +462,8 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 cbar_kws={'label': 'NRMSE in %'}, cmap='viridis',
                 ax=nrmse_ax)
-    nrmse_ax.set_xlabel('Quantity symbol')
-    nrmse_ax.set_ylabel('Trial name')
+    nrmse_ax.set_xlabel('Quantity')
+    nrmse_ax.set_ylabel('Trial')
     nrmse_fig.tight_layout()
     savefig(nrmse_fig, nrmse_path)
     plt.close(nrmse_fig)
