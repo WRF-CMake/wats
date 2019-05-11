@@ -432,6 +432,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     sns.heatmap(pearson_coeffs_all_trials, annot=True, fmt='.3g',
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 ax=pearson_ax)
+    pearson_ax.invert_yaxis()
     pearson_fig.tight_layout()
     savefig(pearson_fig, pearson_path)
     plt.close(pearson_fig)
@@ -442,6 +443,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
                 ax=rmse_ax)
+    rmse_ax.invert_yaxis()
     rmse_fig.tight_layout()
     savefig(rmse_fig, rmse_path)
     plt.close(rmse_fig)
@@ -452,6 +454,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
                 ax=mean_ax)
+    mean_ax.invert_yaxis()
     mean_fig.tight_layout()
     savefig(mean_fig, mean_path)
     plt.close(mean_fig)
@@ -462,6 +465,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 cbar_kws={'label': 'NRMSE in %'}, cmap='viridis',
                 ax=nrmse_ax)
+    nrmse_ax.invert_yaxis()
     nrmse_ax.set_xlabel('Quantity')
     nrmse_ax.set_ylabel('Trial')
     nrmse_fig.tight_layout()
@@ -474,6 +478,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
                 ax=iqr_ax)
+    iqr_ax.invert_yaxis()
     iqr_fig.tight_layout()
     savefig(iqr_fig, iqr_path)
     plt.close(iqr_fig)
@@ -483,6 +488,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     sns.heatmap(rmses_all_trials / iqrs_all_trials, annot=True, fmt='.3g',
                 xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
                 ax=rmseiqr_ax)
+    rmseiqr_ax.invert_yaxis()
     rmseiqr_fig.tight_layout()
     savefig(rmseiqr_fig, rmseiqr_path)
     plt.close(rmseiqr_fig)
