@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 import subprocess
 import multiprocessing
+import time
 import argparse
 import logging
 
@@ -95,7 +96,7 @@ def create_case_dirs(mode: str, nml_path: Path, work_dir: Path) -> Tuple[Path,Pa
     create_empty_dir(output_dir)
     return run_dir, output_dir
 
-def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> bool:
+def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool, retries=3) -> bool:
     args_list = [str(arg) for arg in args]
     tool = Path(args_list[0]).name
     logging.info('Running ' + tool + (' with MPI' if use_mpi else ''))
@@ -120,6 +121,12 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool) -> bool:
         logging.error(tool + ' failed, output:\n' + e.stdout)
         with (cwd / (tool + '.log')).open('w') as fp:
             fp.write(e.stdout)
+        # Try to work around https://github.com/microsoft/azure-pipelines-image-generation/issues/932.
+        if 'gethostbyname failed' in e.stdout:
+            if retries > 0:
+                logging.warn('Sleeping and retrying...')
+                time.sleep(30)
+                success = run_exe(args, cwd, use_mpi, retries - 1)
     else:
         for err_msg in ['ERROR', 'FATAL', 'Error']:
             if err_msg in result.stdout:
