@@ -3,6 +3,9 @@
 
 # General
 work/
+stats*/
+plots*/
+data/
 .vscode/
 
 # Byte-compiled / optimized / DLL files

@@ -1,0 +1,14 @@
+channels:
+  - conda-forge
+dependencies:
+  - requests
+  - numpy
+  - scipy
+  - netcdf4
+  - wrf-python
+  - matplotlib
+  - colorlog
+  - colorama
+  - seaborn
+  #- pip:
+  #  - ..

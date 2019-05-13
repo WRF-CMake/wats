@@ -1,4 +1,5 @@
  &time_control
+run_hours = 1,
 nocolons = .true.
 start_year = 2016, 2016,
 start_month = 03, 03,
@@ -10,7 +11,7 @@ end_day = 23, 23,
 end_hour = 18, 18,
 interval_seconds = 21600,
 input_from_file = .true.,.true.,
-history_interval = 60, 60,
+history_interval = 10, 10,
 frames_per_outfile = 24, 24,
 restart = .false.,
 restart_interval = 5000,

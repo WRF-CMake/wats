@@ -2,5 +2,8 @@ colorlog
 colorama
 requests
 numpy
+scipy
 netCDF4
 wrf-python
+matplotlib
+seaborn
