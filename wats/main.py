@@ -106,7 +106,12 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool, retries=
             # Microsoft MPI
             mpi_path = os.path.join(os.environ['MSMPI_BIN'], 'mpiexec.exe')
             extra_flags = ['-exitcodes', '-lines']
-        else:
+        elif platform.system() == 'Darwin':
+            # Open MPI
+            mpi_path = 'mpiexec'
+            extra_flags = []
+        elif platform.system() == 'Linux':
+            # MPICH
             mpi_path = 'mpiexec'
             extra_flags = ['-print-all-exitcodes']
         args_list = [mpi_path, '-n', str(multiprocessing.cpu_count())] + extra_flags + args_list
