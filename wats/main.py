@@ -153,7 +153,7 @@ def run_wps_case(wps_nml_path: Path, wps_dir: Path, work_dir: Path, use_mpi: boo
     link(geo_data_dir, run_dir / 'geo')
 
     link_grib_py = wps_dir / 'link_grib.py'
-    link_grib_cmd = [sys.executable, str(link_grib_py), str(met_data_dir), str(run_dir)]
+    link_grib_cmd = [sys.executable, str(link_grib_py), str(met_data_dir), '-o', str(run_dir)]
     logging.info('Running ' + ' '.join(link_grib_cmd))
     subprocess.run(link_grib_cmd, check=True)
 
