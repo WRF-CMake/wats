@@ -96,6 +96,11 @@ def create_case_dirs(mode: str, nml_path: Path, work_dir: Path) -> Tuple[Path,Pa
     create_empty_dir(output_dir)
     return run_dir, output_dir
 
+MPI_IMPL = None
+MSMPI_ARGS = ['-exitcodes', '-lines']
+MPICH_ARGS = ['-print-all-exitcodes']
+OPENMPI_ARGS = ['--oversubscribe']
+
 def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool, retries=3) -> bool:
     args_list = [str(arg) for arg in args]
     tool = Path(args_list[0]).name
@@ -105,15 +110,16 @@ def run_exe(args: Iterable[Union[str, Path]], cwd: Path, use_mpi: bool, retries=
         if platform.system() == 'Windows':
             # Microsoft MPI
             mpi_path = os.path.join(os.environ['MSMPI_BIN'], 'mpiexec.exe')
-            extra_flags = ['-exitcodes', '-lines']
-        elif platform.system() == 'Darwin':
-            # Open MPI
+            extra_flags = MSMPI_ARGS
+        else:
+            # MPICH or Open MPI
             mpi_path = 'mpiexec'
-            extra_flags = []
-        elif platform.system() == 'Linux':
-            # MPICH
-            mpi_path = 'mpiexec'
-            extra_flags = ['-print-all-exitcodes']
+            global MPI_IMPL
+            if MPI_IMPL is None:
+                out = subprocess.check_output([mpi_path, '--version'], universal_newlines=True)
+                MPI_IMPL = 'openmpi' if 'open-mpi.org' in out else 'mpich'
+                print('Detected ' + MPI_IMPL)
+            extra_flags = MPICH_ARGS if MPI_IMPL == 'mpich' else OPENMPI_ARGS
         args_list = [mpi_path, '-n', str(multiprocessing.cpu_count())] + extra_flags + args_list
 
     success = True
