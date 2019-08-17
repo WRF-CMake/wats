@@ -27,6 +27,7 @@ sys.path.append(str(ROOT_DIR))
 from wats.util import init_logging
 from wats.nccmp import read_var, calc_rel_error
 from wats.ext_boxplot import compute_extended_boxplot_stats, plot_extended_boxplot
+from wats.latex import abs_err_to_latex
 
 BOXPLOT_VAR_NAMES = [
     'pressure',
@@ -42,7 +43,6 @@ KL_DIV_VAR_NAMES = [
     'ua',
     'va',
     'wa',
-    #'QVAPOR'
 ]
 
 KL_DIV_VAR_LABELS = [
@@ -52,7 +52,15 @@ KL_DIV_VAR_LABELS = [
     r'$u$',
     r'$v$',
     r'$w$',
-    #r'$q_{v}\,$'
+]
+
+KL_DIV_VAR_UNITS = [
+    r'$\mathsf{Pa}$',
+    r'$\mathsf{m^2\ s^{-2}}$',
+    r'$\mathsf{K}$',
+    r'$\mathsf{m\ s^{-1}}$',
+    r'$\mathsf{m\ s^{-1}}$',
+    r'$\mathsf{m\ s^{-1}}$',
 ]
 
 def normalise(arr: np.array) -> np.array:
@@ -61,6 +69,10 @@ def normalise(arr: np.array) -> np.array:
 
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
+
+def abserr(predictions, targets):
+    err = np.abs(predictions - targets)
+    return {'mean': err.mean(), 'std': err.std(), 'min': err.min(), 'max': err.max()}
 
 def compute_boxplot_stats(arr: np.array, label=None) -> dict:
     boxplot_stats = cb.boxplot_stats(arr, whis=1.5, labels=[label])
@@ -158,6 +170,10 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
     kl_divs = []
     pearson_coeffs = []
     rmses = []
+    maes = []
+    ae_stds = []
+    ae_mins = []
+    ae_maxs = []
     iqrs = []
     means = []
     bin_count = 100
@@ -178,6 +194,12 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
         # RMSE
         rmse_ = rmse(ref_concat, trial_concat)
         rmses.append(rmse_)
+        # Absolute error (mean, stddev, min, max)
+        abserr_ = abserr(ref_concat, trial_concat)
+        maes.append(abserr_['mean'])
+        ae_stds.append(abserr_['std'])
+        ae_mins.append(abserr_['min'])
+        ae_maxs.append(abserr_['max'])
         # Inter-quartile range
         q1, q3 = np.percentile(ref_concat, [25, 75])
         iqr = q3 - q1
@@ -203,7 +225,9 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
     stats.append((trial_name,
                   boxplot_stats, boxplot_stats_per_file,
                   ext_boxplot_stats, ext_boxplot_stats_per_file,
-                  kl_divs, pearson_coeffs, rmses, iqrs, means))
+                  kl_divs, pearson_coeffs, rmses,
+                  maes, ae_stds, ae_mins, ae_maxs,
+                  iqrs, means))
 
     with open(stats_path, 'wb') as fp:
         pickle.dump(stats, fp)
@@ -220,6 +244,9 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         for ext in exts:
             fig.savefig(str(path).format(ext=ext))
 
+    quantity_labels_path = plots_dir / 'quantity_labels.csv'
+    quantity_units_path = plots_dir / 'quantity_units.csv'
+    trial_labels_path = plots_dir / 'trial_labels.csv'
     boxplot_path = plots_dir / 'boxplot.{ext}'
     ext_boxplot_path = plots_dir / 'ext_boxplot.{ext}'
     ext_boxplot_vert_path = plots_dir / 'ext_boxplot_vert.{ext}'
@@ -227,6 +254,11 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     kl_div_path = plots_dir / 'kl_div.{ext}'
     pearson_path = plots_dir / 'pearson.{ext}'
     rmse_path = plots_dir / 'rmse.{ext}'
+    mae_path = plots_dir / 'mae.{ext}'
+    ae_std_path = plots_dir / 'ae_std.{ext}'
+    ae_min_path = plots_dir / 'ae_min.{ext}'
+    ae_max_path = plots_dir / 'ae_max.{ext}'
+    ae_tex_path = plots_dir / 'ae.tex'
     nrmse_path = plots_dir / 'nrmse.{ext}'
     rmseiqr_path = plots_dir / 'rmseiqr.{ext}'
     mean_path = plots_dir / 'mean.{ext}'
@@ -260,8 +292,12 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     kl_divs_all_trials = np.asarray([s[5] for s in stats])
     pearson_coeffs_all_trials = np.asarray([s[6] for s in stats])
     rmses_all_trials = np.asarray([s[7] for s in stats])
-    iqrs_all_trials = np.asarray([s[8] for s in stats])
-    means_all_trials = np.asarray([s[9] for s in stats])
+    maes_all_trials = np.asarray([s[8] for s in stats])
+    ae_std_all_trials = np.asarray([s[9] for s in stats])
+    ae_min_all_trials = np.asarray([s[10] for s in stats])
+    ae_max_all_trials = np.asarray([s[11] for s in stats])
+    iqrs_all_trials = np.asarray([s[12] for s in stats])
+    means_all_trials = np.asarray([s[13] for s in stats])
 
     def rel_to_pct_error(stats):
         for n in ['mean', 'med', 'q1', 'q3', 'cilo', 'cihi', 'whislo', 'whishi', 'fliers']:
@@ -293,6 +329,18 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         trial_labels.append('{os}/{system}/{type}/{mode}'.format(
             os=trial['os'], system=trial['build_system'],
             type=trial['build_type'], mode=trial['mode']))
+
+    logging.info('Saving trial labels')
+    with open(trial_labels_path, 'w') as fp:
+        fp.write(','.join(trial_labels))
+
+    logging.info('Saving quantity labels')
+    with open(quantity_labels_path, 'w') as fp:
+        fp.write(','.join(KL_DIV_VAR_LABELS))
+    
+    logging.info('Saving quantity units')
+    with open(quantity_units_path, 'w') as fp:
+        fp.write(','.join(KL_DIV_VAR_UNITS))
 
     logging.info('Creating boxplots (per-trial)')
     boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
@@ -448,6 +496,60 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     savefig(rmse_fig, rmse_path)
     plt.close(rmse_fig)
 
+    logging.info('Creating MAE table plot')
+    mae_fig, mae_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(maes_all_trials, annot=True, fmt='.3g',
+                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
+                ax=mae_ax)
+    mae_ax.invert_yaxis()
+    mae_fig.tight_layout()
+    savefig(mae_fig, mae_path)
+    plt.close(mae_fig)
+    np.savetxt(str(mae_path).format(ext='csv'), maes_all_trials, fmt='%.18f')
+
+    logging.info('Creating absolute error stddev table plot')
+    ae_std_fig, ae_std_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(ae_std_all_trials, annot=True, fmt='.3g',
+                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
+                ax=ae_std_ax)
+    ae_std_ax.invert_yaxis()
+    ae_std_fig.tight_layout()
+    savefig(ae_std_fig, ae_std_path)
+    plt.close(ae_std_fig)
+    np.savetxt(str(ae_std_path).format(ext='csv'), ae_std_all_trials, fmt='%.18f')
+
+    logging.info('Creating absolute error min table plot')
+    ae_min_fig, ae_min_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(ae_min_all_trials, annot=True, fmt='.3g',
+                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
+                ax=ae_min_ax)
+    ae_min_ax.invert_yaxis()
+    ae_min_fig.tight_layout()
+    savefig(ae_min_fig, ae_min_path)
+    plt.close(ae_min_fig)
+    np.savetxt(str(ae_min_path).format(ext='csv'), ae_min_all_trials, fmt='%.18f')
+
+    logging.info('Creating absolute error max table plot')
+    ae_max_fig, ae_max_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(ae_max_all_trials, annot=True, fmt='.3g',
+                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
+                ax=ae_max_ax)
+    ae_max_ax.invert_yaxis()
+    ae_max_fig.tight_layout()
+    savefig(ae_max_fig, ae_max_path)
+    plt.close(ae_max_fig)
+    np.savetxt(str(ae_max_path).format(ext='csv'), ae_max_all_trials, fmt='%.18f')
+
+    logging.info('Creating absolute error latex table')
+    tex = abs_err_to_latex(trial_labels, [f'{l} in {u}' for l,u in zip(KL_DIV_VAR_LABELS, KL_DIV_VAR_UNITS)],
+                           maes_all_trials, ae_std_all_trials, ae_max_all_trials)
+    with open(ae_tex_path, 'w') as fp:
+        fp.write(tex)
+
     logging.info('Creating means table plot')
     mean_fig, mean_ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(means_all_trials, annot=True, fmt='.3g',
@@ -458,6 +560,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     mean_fig.tight_layout()
     savefig(mean_fig, mean_path)
     plt.close(mean_fig)
+    np.savetxt(str(mean_path) + '.csv', means_all_trials, fmt='%.18f')
 
     logging.info('Creating NRMSE heatmap')
     nrmse_fig, nrmse_ax = plt.subplots(figsize=(10,6), dpi=dpi)
@@ -532,8 +635,8 @@ if __name__ == '__main__':
                              help='DPI of plots')
     plot_parser.add_argument('--filter', dest='trial_filter', type=str,
                              help='Optional trial name filter, e.g. macOS')
-    plot_parser.add_argument('--skip-detailed', action='store_true',
-                             help='Whether to skip producing additional plots per-file per-quantity')
+    plot_parser.add_argument('--detailed', action='store_true',
+                             help='Whether to produce additional plots per-file per-quantity')
 
     args = parser.parse_args()
 
@@ -559,6 +662,6 @@ if __name__ == '__main__':
             for trial_dir in trial_dirs:
                 compute_and_append_stats(args.ref_dir, trial_dir, stats_path, args.path_filter, args.time_idx)
     elif args.subparser_name == 'plot':
-        plot(stats_path, args.plots_dir, args.trial_filter, not args.skip_detailed, args.dpi)
+        plot(stats_path, args.plots_dir, args.trial_filter, args.detailed, args.dpi)
     else:
         assert False
