@@ -176,6 +176,8 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
     ae_maxs = []
     iqrs = []
     means = []
+    boxplot_stats_refs = []
+    boxplot_stats_trials = []
     bin_count = 100
     for var_name in KL_DIV_VAR_NAMES:
         logging.info(f'  Processing {var_name}')
@@ -207,6 +209,11 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
         # Mean
         mean = np.mean(ref_concat)
         means.append(mean)
+        # Boxplot stats
+        boxplot_stats_trial = compute_boxplot_stats(trial_concat)
+        boxplot_stats_trials.append(boxplot_stats_trial)
+        boxplot_stats_ref = compute_boxplot_stats(ref_concat)
+        boxplot_stats_refs.append(boxplot_stats_ref)
 
     logging.info('Computing boxplot stats (combined)')
     boxplot_stats = compute_boxplot_stats(rel_errs)
@@ -227,7 +234,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
                   ext_boxplot_stats, ext_boxplot_stats_per_file,
                   kl_divs, pearson_coeffs, rmses,
                   maes, ae_stds, ae_mins, ae_maxs,
-                  iqrs, means))
+                  iqrs, means, boxplot_stats_refs, boxplot_stats_trials))
 
     with open(stats_path, 'wb') as fp:
         pickle.dump(stats, fp)
@@ -247,10 +254,12 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     quantity_labels_path = plots_dir / 'quantity_labels.csv'
     quantity_units_path = plots_dir / 'quantity_units.csv'
     trial_labels_path = plots_dir / 'trial_labels.csv'
-    boxplot_path = plots_dir / 'boxplot.{ext}'
-    ext_boxplot_path = plots_dir / 'ext_boxplot.{ext}'
-    ext_boxplot_vert_path = plots_dir / 'ext_boxplot_vert.{ext}'
-    ext_boxplot_test_path = plots_dir / 'ext_boxplot_test.{ext}'
+    ref_boxplot_path = plots_dir / 'ref_boxplot.{ext}'
+    trial_boxplot_path = plots_dir / 'trial_boxplot.{ext}'
+    rel_err_boxplot_path = plots_dir / 'rel_err_boxplot.{ext}'
+    rel_err_ext_boxplot_path = plots_dir / 'rel_err_ext_boxplot.{ext}'
+    rel_err_ext_boxplot_vert_path = plots_dir / 'rel_err_ext_boxplot_vert.{ext}'
+    rel_err_ext_boxplot_test_path = plots_dir / 'rel_err_ext_boxplot_test.{ext}'
     kl_div_path = plots_dir / 'kl_div.{ext}'
     pearson_path = plots_dir / 'pearson.{ext}'
     rmse_path = plots_dir / 'rmse.{ext}'
@@ -285,10 +294,10 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         return {'os': parts[1], 'build_system': parts[2], 'build_type': parts[3], 'mode': parts[4]}
 
     trial_names = [s[0] for s in stats]
-    boxplot_stats_all_trials = [s[1] for s in stats]
-    boxplot_stats_all_trials_per_file = [s[2] for s in stats]
-    ext_boxplot_stats_all_trials = [s[3] for s in stats]
-    ext_boxplot_stats_all_trials_per_file = [s[4] for s in stats]
+    rel_err_boxplot_stats_all_trials = [s[1] for s in stats]
+    rel_err_boxplot_stats_all_trials_per_file = [s[2] for s in stats]
+    rel_err_ext_boxplot_stats_all_trials = [s[3] for s in stats]
+    rel_err_ext_boxplot_stats_all_trials_per_file = [s[4] for s in stats]
     kl_divs_all_trials = np.asarray([s[5] for s in stats])
     pearson_coeffs_all_trials = np.asarray([s[6] for s in stats])
     rmses_all_trials = np.asarray([s[7] for s in stats])
@@ -298,6 +307,8 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     ae_max_all_trials = np.asarray([s[11] for s in stats])
     iqrs_all_trials = np.asarray([s[12] for s in stats])
     means_all_trials = np.asarray([s[13] for s in stats])
+    ref_boxplot_stats_all_trials = [s[14] for s in stats]
+    trial_boxplot_stats_all_trials = [s[15] for s in stats]
 
     def rel_to_pct_error(stats):
         for n in ['mean', 'med', 'q1', 'q3', 'cilo', 'cihi', 'whislo', 'whishi', 'fliers']:
@@ -307,15 +318,15 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         for n in ['median', 'mean', 'percentiles', 'min', 'max', 'values_min', 'values_max']:
             stats[n] *= 100
 
-    for stats in boxplot_stats_all_trials:
+    for stats in rel_err_boxplot_stats_all_trials:
         rel_to_pct_error(stats)
-    for stats_per_file in boxplot_stats_all_trials_per_file:
+    for stats_per_file in rel_err_boxplot_stats_all_trials_per_file:
         for stats_per_var in stats_per_file.values():
             for stats in stats_per_var:
                 rel_to_pct_error(stats)
-    for stats in ext_boxplot_stats_all_trials:
+    for stats in rel_err_ext_boxplot_stats_all_trials:
         rel_to_percent_error_ext(stats)
-    for stats_per_file in ext_boxplot_stats_all_trials_per_file:
+    for stats_per_file in rel_err_ext_boxplot_stats_all_trials_per_file:
         for stats_per_var in stats_per_file.values():
             for stats in stats_per_var:
                 rel_to_percent_error_ext(stats)
@@ -342,21 +353,35 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     with open(quantity_units_path, 'w') as fp:
         fp.write(','.join(KL_DIV_VAR_UNITS))
 
-    logging.info('Creating boxplots (per-trial)')
+    logging.info('Creating ref boxplots (per-quantity)')
+    boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    ref_boxplot_stats_per_quantity = ref_boxplot_stats_all_trials[0]
+    for i, (var_label, var_unit, ref_boxplot_stats) \
+          in enumerate(zip(KL_DIV_VAR_LABELS, KL_DIV_VAR_UNITS, ref_boxplot_stats_per_quantity)):
+        ax = boxplot_fig.add_subplot(len(KL_DIV_VAR_NAMES), 1, i + 1)
+        ax.bxp([ref_boxplot_stats], vert=False)
+        ax.set_yticklabels([f'{var_label} in {var_unit}'])
+    boxplot_ax.set_axis_off()
+    #sns.despine(boxplot_fig)
+    boxplot_fig.tight_layout()
+    savefig(boxplot_fig, ref_boxplot_path)
+    plt.close(boxplot_fig)
+
+    logging.info('Creating rel err boxplots (per-trial)')
     boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
     boxplot_ax.set_ylabel('Trial')
     boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(boxplot_fig)
-    boxplot_ax.bxp(boxplot_stats_all_trials, vert=False)
+    boxplot_ax.bxp(rel_err_boxplot_stats_all_trials, vert=False)
     #boxplot_ax.set_xticklabels(trial_idxs)
     boxplot_ax.set_yticklabels(trial_labels)
     boxplot_fig.tight_layout()
-    savefig(boxplot_fig, boxplot_path)
+    savefig(boxplot_fig, rel_err_boxplot_path)
     plt.close(boxplot_fig)
 
     if detailed:
         logging.info('Creating boxplots (per-trial per-file per-quantity)')
-        for trial_name, boxplot_stats_per_file in zip(trial_names, boxplot_stats_all_trials_per_file):
+        for trial_name, boxplot_stats_per_file in zip(trial_names, rel_err_boxplot_stats_all_trials_per_file):
             trial_name = trial_name.replace('wats_', '')
             for rel_path, boxplot_stats_all_vars in boxplot_stats_per_file.items():
                 boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6))
@@ -366,8 +391,8 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 sns.despine(boxplot_fig)
                 boxplot_ax.bxp(boxplot_stats_all_vars)
                 clean_rel_path = rel_path.replace('/', '_').replace('\\', '_')
-                boxplot_path = plots_detailed_dir / 'boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
-                savefig(boxplot_fig, boxplot_path)
+                rel_err_boxplot_path = plots_detailed_dir / 'boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
+                savefig(boxplot_fig, rel_err_boxplot_path)
                 plt.close(boxplot_fig)
 
     logging.info('Creating extended boxplots (per-trial)')
@@ -375,12 +400,12 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     ext_boxplot_ax.set_ylabel('Trial')
     ext_boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(ext_boxplot_fig)
-    plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials,
+    plot_extended_boxplot(ext_boxplot_ax, rel_err_ext_boxplot_stats_all_trials,
                           offscale_minmax=offscale_minmax, vert=False,
                           showmeans=False)
     ext_boxplot_ax.set_yticklabels(trial_labels)
     ext_boxplot_fig.tight_layout()
-    savefig(ext_boxplot_fig, ext_boxplot_path)
+    savefig(ext_boxplot_fig, rel_err_ext_boxplot_path)
     plt.close(ext_boxplot_fig)
 
     logging.info('Creating extended boxplots (per-trial) -- vertical')
@@ -388,11 +413,11 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     ext_boxplot_ax.set_xlabel('Trial number')
     ext_boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
     sns.despine(ext_boxplot_fig)
-    plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_trials,
+    plot_extended_boxplot(ext_boxplot_ax, rel_err_ext_boxplot_stats_all_trials,
                           offscale_minmax=offscale_minmax, vert=True)
     ext_boxplot_ax.set_xticklabels(trial_idxs)
     ext_boxplot_fig.tight_layout()
-    savefig(ext_boxplot_fig, ext_boxplot_vert_path)
+    savefig(ext_boxplot_fig, rel_err_ext_boxplot_vert_path)
     plt.close(ext_boxplot_fig)
 
     logging.info('Creating extended boxplot -- for legend')
@@ -407,12 +432,12 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
     plot_extended_boxplot(ext_boxplot_ax, [stats]*20, showmeans=False,
                           offscale_minmax=False, vert=True)
-    savefig(ext_boxplot_fig, ext_boxplot_test_path)
+    savefig(ext_boxplot_fig, rel_err_ext_boxplot_test_path)
     plt.close(ext_boxplot_fig)
 
     if detailed:
         logging.info('Creating extended boxplots (per-trial per-file per-quantity)')
-        for trial_name, ext_boxplot_stats_per_file in zip(trial_names, ext_boxplot_stats_all_trials_per_file):
+        for trial_name, ext_boxplot_stats_per_file in zip(trial_names, rel_err_ext_boxplot_stats_all_trials_per_file):
             trial_name = trial_name.replace('wats_', '')
             for rel_path, ext_boxplot_stats_all_vars in ext_boxplot_stats_per_file.items():
                 ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6))
@@ -423,8 +448,8 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
                 plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_vars,
                                       offscale_minmax=offscale_minmax)
                 clean_rel_path = rel_path.replace('/', '_').replace('\\', '_')
-                ext_boxplot_path = plots_detailed_dir / 'ext_boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
-                savefig(ext_boxplot_fig, ext_boxplot_path)
+                rel_err_ext_boxplot_path = plots_detailed_dir / 'ext_boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
+                savefig(ext_boxplot_fig, rel_err_ext_boxplot_path)
                 plt.close(ext_boxplot_fig)
 
     logging.info('Creating Kullback-Leibler divergence plot')
