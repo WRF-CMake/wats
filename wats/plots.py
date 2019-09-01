@@ -202,7 +202,7 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         plots_detailed_dir = plots_dir / 'detailed'
         plots_detailed_dir.mkdir(exist_ok=True)
     
-    exts = ['png', 'svg']
+    exts = ['png', 'svg', 'pdf']
 
     def savefig(fig, path):
         for ext in exts:
