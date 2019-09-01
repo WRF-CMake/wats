@@ -25,18 +25,13 @@ ROOT_DIR = THIS_DIR.parent
 sys.path.append(str(ROOT_DIR))
 
 from wats.util import init_logging
-from wats.nccmp import read_var, calc_rel_error
+from wats.nccmp import (
+    read_var, calc_rel_error, calc_rel_error_range_normalised,
+    calc_rel_error_iqr_normalised, calc_range, calc_iqr)
 from wats.ext_boxplot import compute_extended_boxplot_stats, plot_extended_boxplot
 from wats.latex import abs_err_to_latex
 
-BOXPLOT_VAR_NAMES = [
-    'pressure',
-    'geopotential',
-    'theta',
-    'TKE',
-]
-
-KL_DIV_VAR_NAMES = [
+VAR_NAMES = [
     'pressure',
     'geopt',
     'theta',
@@ -45,7 +40,7 @@ KL_DIV_VAR_NAMES = [
     'wa',
 ]
 
-KL_DIV_VAR_LABELS = [
+VAR_LABELS = [
     r'$p$',
     r'$\phi$',
     r'$\theta$',
@@ -54,7 +49,7 @@ KL_DIV_VAR_LABELS = [
     r'$w$',
 ]
 
-KL_DIV_VAR_UNITS = [
+VAR_UNITS = [
     r'$\mathsf{Pa}$',
     r'$\mathsf{m^2\ s^{-2}}$',
     r'$\mathsf{K}$',
@@ -62,10 +57,6 @@ KL_DIV_VAR_UNITS = [
     r'$\mathsf{m\ s^{-1}}$',
     r'$\mathsf{m\ s^{-1}}$',
 ]
-
-def normalise(arr: np.array) -> np.array:
-    norm = (arr - arr.min()) / (arr.max() - arr.min())
-    return norm
 
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
@@ -90,8 +81,8 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
     logging.info('Reference: {}'.format(ref_dir))
     logging.info('Trial: {}'.format(trial_dir))
 
-    var_ref_all = {var_name: [] for var_name in KL_DIV_VAR_NAMES} # type: Dict[str,List[np.array]]
-    var_trial_all = {var_name: [] for var_name in KL_DIV_VAR_NAMES} # type: Dict[str,List[np.array]]
+    var_ref_all = {var_name: [] for var_name in VAR_NAMES} # type: Dict[str,List[np.array]]
+    var_trial_all = {var_name: [] for var_name in VAR_NAMES} # type: Dict[str,List[np.array]]
     rel_errs = []
     boxplot_stats_per_file = {}
     ext_boxplot_stats_per_file = {}
@@ -107,8 +98,8 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
         nc_ref = nc.Dataset(ref_path, 'r')
         nc_trial = nc.Dataset(trial_path, 'r')
 
-        for var_name in KL_DIV_VAR_NAMES:
-            logging.info(f'  Kullback-Leibler divergence: reading {var_name}')
+        for var_name in VAR_NAMES:
+            logging.info(f'  Reading {var_name}')
             var_ref = read_var(nc_ref, var_name, time_idx)
             var_trial = read_var(nc_trial, var_name, time_idx)
             var_ref_all[var_name].append(var_ref.ravel())
@@ -116,48 +107,19 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
 
         boxplot_stats_per_var = []
         ext_boxplot_stats_per_var = []
-        for var_name in BOXPLOT_VAR_NAMES:
+        for var_name in VAR_NAMES:
             logging.info(f'  Summary statistics: reading {var_name} & computing relative error')
             var_ref = read_var(nc_ref, var_name, time_idx)
             var_trial = read_var(nc_trial, var_name, time_idx)
-            small = np.count_nonzero(np.abs(var_ref) < 0.01)
-            if small > 0:
-                logging.warn('  Found {} ref values < 0.01. Min: {}, Max: {}'.format(
-                    small, np.min(var_ref), np.max(var_ref)))
-            rel_err = calc_rel_error(var_ref, var_trial)
-            large_err = np.abs(rel_err) > 0.5
-            if large_err.any():
-                logging.warn('  Found relative error > 0.5')
-                logging.warn('    Ref: {}'.format(var_ref[large_err].ravel()))
-                logging.warn('    Trial: {}'.format(var_trial[large_err].ravel()))
-                if var_name == 'TKE':
-                    for sub_var_name in ['U', 'V', 'W']:
-                        dims = nc_ref.dimensions
-                        bottom_top = dims['bottom_top'].size
-                        south_north = dims['south_north'].size
-                        west_east = dims['west_east'].size
-                        sub_var_ref = read_var(nc_ref, sub_var_name, time_idx)
-                        sub_var_trial = read_var(nc_trial, sub_var_name, time_idx)
-                        sub_var_ref = sub_var_ref[:,:bottom_top,:south_north,:west_east]
-                        sub_var_trial = sub_var_trial[:,:bottom_top,:south_north,:west_east]
-                        logging.warn('    Ref [{}]: {}'.format(sub_var_name, sub_var_ref[large_err].ravel()))
-                        logging.warn('    Trial [{}]: {}'.format(sub_var_name, sub_var_trial[large_err].ravel()))
+
+            rel_err = calc_rel_error_range_normalised(var_ref, var_trial)
+            
             rel_err = rel_err.ravel()
             rel_errs.append(rel_err)
             logging.info(f'  Summary statistics: computing {var_name} boxplot stats')
             boxplot_stats_per_var.append(compute_boxplot_stats(rel_err, label=var_name))
             ext_boxplot_stats = compute_extended_boxplot_stats(rel_err, label=var_name)
             ext_boxplot_stats_per_var.append(ext_boxplot_stats)
-            values_min = ext_boxplot_stats['values_min']
-            values_max = ext_boxplot_stats['values_max']
-            values_min_sample = np.sort(values_min)[:1000]
-            values_max_sample = np.sort(values_max)[::-1][:1000]
-            logging.info('  99.9%-100%: {}'.format(values_max_sample))
-            if len(values_max_sample) < len(values_max):
-                logging.info('  (truncated to 1000, total: {})'.format(len(values_max)))
-            logging.info('  0%-0.1%: {}'.format(values_min_sample))
-            if len(values_min_sample) < len(values_min):
-                logging.info('  (truncated to 1000, total: {})'.format(len(values_min)))
 
         boxplot_stats_per_file[str(rel_path)] = boxplot_stats_per_var
         ext_boxplot_stats_per_file[str(rel_path)] = ext_boxplot_stats_per_var
@@ -166,8 +128,7 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
 
     logging.info('All data read')
 
-    logging.info('Computing Kullback-Leibler divergence, Pearson correlation coefficients, RMSE')
-    kl_divs = []
+    logging.info('Computing per-quantity statistics')
     pearson_coeffs = []
     rmses = []
     maes = []
@@ -178,21 +139,15 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
     means = []
     boxplot_stats_refs = []
     boxplot_stats_trials = []
+    ranges = []
     bin_count = 100
-    for var_name in KL_DIV_VAR_NAMES:
+    for var_name in VAR_NAMES:
         logging.info(f'  Processing {var_name}')
         ref_concat = np.concatenate(var_ref_all[var_name])
         trial_concat = np.concatenate(var_trial_all[var_name])
         # Pearson
         pearson_coeff = scipy.stats.pearsonr(ref_concat, trial_concat)[0]
         pearson_coeffs.append(pearson_coeff)
-        # KL
-        hist_min = np.min([ref_concat, trial_concat])
-        hist_max = np.max([ref_concat, trial_concat])
-        ref_freq, _ = np.histogram(ref_concat, bins=bin_count, range=(hist_min, hist_max), density=True)
-        trial_freq, _ = np.histogram(trial_concat, bins=bin_count, range=(hist_min, hist_max), density=True)
-        kl_div = scipy.stats.entropy(trial_freq, ref_freq)
-        kl_divs.append(kl_div)
         # RMSE
         rmse_ = rmse(ref_concat, trial_concat)
         rmses.append(rmse_)
@@ -202,14 +157,15 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
         ae_stds.append(abserr_['std'])
         ae_mins.append(abserr_['min'])
         ae_maxs.append(abserr_['max'])
-        # Inter-quartile range
-        q1, q3 = np.percentile(ref_concat, [25, 75])
-        iqr = q3 - q1
+        # Inter-quartile range of data
+        iqr = calc_iqr(ref_concat)
         iqrs.append(iqr)
-        # Mean
+        # Mean of data
         mean = np.mean(ref_concat)
         means.append(mean)
-        # Boxplot stats
+        # Range of data
+        ranges.append(calc_range(ref_concat))
+        # Boxplot stats of data
         boxplot_stats_trial = compute_boxplot_stats(trial_concat)
         boxplot_stats_trials.append(boxplot_stats_trial)
         boxplot_stats_ref = compute_boxplot_stats(ref_concat)
@@ -232,9 +188,10 @@ def compute_and_append_stats(ref_dir: Path, trial_dir: Path, stats_path: Path,
     stats.append((trial_name,
                   boxplot_stats, boxplot_stats_per_file,
                   ext_boxplot_stats, ext_boxplot_stats_per_file,
-                  kl_divs, pearson_coeffs, rmses,
+                  pearson_coeffs, rmses,
                   maes, ae_stds, ae_mins, ae_maxs,
-                  iqrs, means, boxplot_stats_refs, boxplot_stats_trials))
+                  iqrs, means, boxplot_stats_refs, boxplot_stats_trials,
+                  ranges))
 
     with open(stats_path, 'wb') as fp:
         pickle.dump(stats, fp)
@@ -260,7 +217,6 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     rel_err_ext_boxplot_path = plots_dir / 'rel_err_ext_boxplot.{ext}'
     rel_err_ext_boxplot_vert_path = plots_dir / 'rel_err_ext_boxplot_vert.{ext}'
     rel_err_ext_boxplot_test_path = plots_dir / 'rel_err_ext_boxplot_test.{ext}'
-    kl_div_path = plots_dir / 'kl_div.{ext}'
     pearson_path = plots_dir / 'pearson.{ext}'
     rmse_path = plots_dir / 'rmse.{ext}'
     mae_path = plots_dir / 'mae.{ext}'
@@ -268,9 +224,11 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     ae_min_path = plots_dir / 'ae_min.{ext}'
     ae_max_path = plots_dir / 'ae_max.{ext}'
     ae_tex_path = plots_dir / 'ae.tex'
-    nrmse_path = plots_dir / 'nrmse.{ext}'
-    rmseiqr_path = plots_dir / 'rmseiqr.{ext}'
+    nrmse_mean_path = plots_dir / 'nrmse_mean.{ext}'
+    nrmse_range_path = plots_dir / 'nrmse_range.{ext}'
+    nrmse_iqr_path = plots_dir / 'nrmse_iqr.{ext}'
     mean_path = plots_dir / 'mean.{ext}'
+    range_path = plots_dir / 'range.{ext}'
     iqr_path = plots_dir / 'iqr.{ext}'
 
 
@@ -298,17 +256,17 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
     rel_err_boxplot_stats_all_trials_per_file = [s[2] for s in stats]
     rel_err_ext_boxplot_stats_all_trials = [s[3] for s in stats]
     rel_err_ext_boxplot_stats_all_trials_per_file = [s[4] for s in stats]
-    kl_divs_all_trials = np.asarray([s[5] for s in stats])
-    pearson_coeffs_all_trials = np.asarray([s[6] for s in stats])
-    rmses_all_trials = np.asarray([s[7] for s in stats])
-    maes_all_trials = np.asarray([s[8] for s in stats])
-    ae_std_all_trials = np.asarray([s[9] for s in stats])
-    ae_min_all_trials = np.asarray([s[10] for s in stats])
-    ae_max_all_trials = np.asarray([s[11] for s in stats])
-    iqrs_all_trials = np.asarray([s[12] for s in stats])
-    means_all_trials = np.asarray([s[13] for s in stats])
-    ref_boxplot_stats_all_trials = [s[14] for s in stats]
-    trial_boxplot_stats_all_trials = [s[15] for s in stats]
+    pearson_coeffs_all_trials = np.asarray([s[5] for s in stats])
+    rmses_all_trials = np.asarray([s[6] for s in stats])
+    maes_all_trials = np.asarray([s[7] for s in stats])
+    ae_std_all_trials = np.asarray([s[8] for s in stats])
+    ae_min_all_trials = np.asarray([s[9] for s in stats])
+    ae_max_all_trials = np.asarray([s[10] for s in stats])
+    iqrs_all_trials = np.asarray([s[11] for s in stats])
+    means_all_trials = np.asarray([s[12] for s in stats])
+    ref_boxplot_stats_all_trials = [s[13] for s in stats]
+    trial_boxplot_stats_all_trials = [s[14] for s in stats]
+    ranges_all_trials = np.asarray([s[15] for s in stats])
 
     def rel_to_pct_error(stats):
         for n in ['mean', 'med', 'q1', 'q3', 'cilo', 'cihi', 'whislo', 'whishi', 'fliers']:
@@ -347,78 +305,76 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
 
     logging.info('Saving quantity labels')
     with open(quantity_labels_path, 'w') as fp:
-        fp.write(','.join(KL_DIV_VAR_LABELS))
+        fp.write(','.join(VAR_LABELS))
     
     logging.info('Saving quantity units')
     with open(quantity_units_path, 'w') as fp:
-        fp.write(','.join(KL_DIV_VAR_UNITS))
+        fp.write(','.join(VAR_UNITS))
 
     logging.info('Creating ref boxplots (per-quantity)')
-    boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     ref_boxplot_stats_per_quantity = ref_boxplot_stats_all_trials[0]
     for i, (var_label, var_unit, ref_boxplot_stats) \
-          in enumerate(zip(KL_DIV_VAR_LABELS, KL_DIV_VAR_UNITS, ref_boxplot_stats_per_quantity)):
-        ax = boxplot_fig.add_subplot(len(KL_DIV_VAR_NAMES), 1, i + 1)
-        ax.bxp([ref_boxplot_stats], vert=False)
-        ax.set_yticklabels([f'{var_label} in {var_unit}'])
-    boxplot_ax.set_axis_off()
-    #sns.despine(boxplot_fig)
-    boxplot_fig.tight_layout()
-    savefig(boxplot_fig, ref_boxplot_path)
-    plt.close(boxplot_fig)
+          in enumerate(zip(VAR_LABELS, VAR_UNITS, ref_boxplot_stats_per_quantity)):
+        sub_ax = fig.add_subplot(len(VAR_NAMES), 1, i + 1)
+        sub_ax.bxp([ref_boxplot_stats], vert=False)
+        sub_ax.set_yticklabels([f'{var_label} in {var_unit}'])
+    ax.set_axis_off()
+    fig.tight_layout()
+    savefig(fig, ref_boxplot_path)
+    plt.close(fig)
 
     logging.info('Creating rel err boxplots (per-trial)')
-    boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    boxplot_ax.set_ylabel('Trial')
-    boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
-    sns.despine(boxplot_fig)
-    boxplot_ax.bxp(rel_err_boxplot_stats_all_trials, vert=False)
-    #boxplot_ax.set_xticklabels(trial_idxs)
-    boxplot_ax.set_yticklabels(trial_labels)
-    boxplot_fig.tight_layout()
-    savefig(boxplot_fig, rel_err_boxplot_path)
-    plt.close(boxplot_fig)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    ax.set_ylabel('Trial')
+    ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
+    sns.despine(fig)
+    ax.bxp(rel_err_boxplot_stats_all_trials, vert=False)
+    ax.set_yticklabels(trial_labels)
+    fig.tight_layout()
+    savefig(fig, rel_err_boxplot_path)
+    plt.close(fig)
 
     if detailed:
         logging.info('Creating boxplots (per-trial per-file per-quantity)')
         for trial_name, boxplot_stats_per_file in zip(trial_names, rel_err_boxplot_stats_all_trials_per_file):
             trial_name = trial_name.replace('wats_', '')
             for rel_path, boxplot_stats_all_vars in boxplot_stats_per_file.items():
-                boxplot_fig, boxplot_ax = plt.subplots(figsize=(10,6))
-                boxplot_ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
-                boxplot_ax.set_xlabel('Quantity')
-                boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
-                sns.despine(boxplot_fig)
-                boxplot_ax.bxp(boxplot_stats_all_vars)
+                fig, ax = plt.subplots(figsize=(10,6))
+                ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
+                ax.set_xlabel('Quantity')
+                ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
+                sns.despine(fig)
+                ax.bxp(boxplot_stats_all_vars)
                 clean_rel_path = rel_path.replace('/', '_').replace('\\', '_')
                 rel_err_boxplot_path = plots_detailed_dir / 'boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
-                savefig(boxplot_fig, rel_err_boxplot_path)
-                plt.close(boxplot_fig)
+                savefig(fig, rel_err_boxplot_path)
+                plt.close(fig)
 
     logging.info('Creating extended boxplots (per-trial)')
-    ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    ext_boxplot_ax.set_ylabel('Trial')
-    ext_boxplot_ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
-    sns.despine(ext_boxplot_fig)
-    plot_extended_boxplot(ext_boxplot_ax, rel_err_ext_boxplot_stats_all_trials,
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    ax.set_ylabel('Trial')
+    ax.set_xlabel(r'$\mathbf{\delta}$' + ' in %')
+    sns.despine(fig)
+    plot_extended_boxplot(ax, rel_err_ext_boxplot_stats_all_trials,
                           offscale_minmax=offscale_minmax, vert=False,
                           showmeans=False)
-    ext_boxplot_ax.set_yticklabels(trial_labels)
-    ext_boxplot_fig.tight_layout()
-    savefig(ext_boxplot_fig, rel_err_ext_boxplot_path)
-    plt.close(ext_boxplot_fig)
+    ax.set_yticklabels(trial_labels)
+    fig.tight_layout()
+    savefig(fig, rel_err_ext_boxplot_path)
+    plt.close(fig)
 
     logging.info('Creating extended boxplots (per-trial) -- vertical')
-    ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    ext_boxplot_ax.set_xlabel('Trial number')
-    ext_boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
-    sns.despine(ext_boxplot_fig)
-    plot_extended_boxplot(ext_boxplot_ax, rel_err_ext_boxplot_stats_all_trials,
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    ax.set_xlabel('Trial number')
+    ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
+    sns.despine(fig)
+    plot_extended_boxplot(ax, rel_err_ext_boxplot_stats_all_trials,
                           offscale_minmax=offscale_minmax, vert=True)
-    ext_boxplot_ax.set_xticklabels(trial_idxs)
-    ext_boxplot_fig.tight_layout()
-    savefig(ext_boxplot_fig, rel_err_ext_boxplot_vert_path)
-    plt.close(ext_boxplot_fig)
+    ax.set_xticklabels(trial_idxs)
+    fig.tight_layout()
+    savefig(fig, rel_err_ext_boxplot_vert_path)
+    plt.close(fig)
 
     logging.info('Creating extended boxplot -- for legend')
     stats = dict(
@@ -429,197 +385,176 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         max=60,
         label=''
         )
-    ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    plot_extended_boxplot(ext_boxplot_ax, [stats]*20, showmeans=False,
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    plot_extended_boxplot(ax, [stats]*20, showmeans=False,
                           offscale_minmax=False, vert=True)
-    savefig(ext_boxplot_fig, rel_err_ext_boxplot_test_path)
-    plt.close(ext_boxplot_fig)
+    savefig(fig, rel_err_ext_boxplot_test_path)
+    plt.close(fig)
 
     if detailed:
         logging.info('Creating extended boxplots (per-trial per-file per-quantity)')
         for trial_name, ext_boxplot_stats_per_file in zip(trial_names, rel_err_ext_boxplot_stats_all_trials_per_file):
             trial_name = trial_name.replace('wats_', '')
             for rel_path, ext_boxplot_stats_all_vars in ext_boxplot_stats_per_file.items():
-                ext_boxplot_fig, ext_boxplot_ax = plt.subplots(figsize=(10,6))
-                ext_boxplot_ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
-                ext_boxplot_ax.set_xlabel('Quantity')
-                ext_boxplot_ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
-                sns.despine(ext_boxplot_fig)
-                plot_extended_boxplot(ext_boxplot_ax, ext_boxplot_stats_all_vars,
+                fig, ax = plt.subplots(figsize=(10,6))
+                ax.set_title('Trial: {}\nFile: {}'.format(trial_name, rel_path))
+                ax.set_xlabel('Quantity')
+                ax.set_ylabel(r'$\mathbf{\delta}$' + ' in %')
+                sns.despine(fig)
+                plot_extended_boxplot(ax, ext_boxplot_stats_all_vars,
                                       offscale_minmax=offscale_minmax)
                 clean_rel_path = rel_path.replace('/', '_').replace('\\', '_')
                 rel_err_ext_boxplot_path = plots_detailed_dir / 'ext_boxplot_{}_{}.png'.format(trial_name, clean_rel_path)
-                savefig(ext_boxplot_fig, rel_err_ext_boxplot_path)
-                plt.close(ext_boxplot_fig)
-
-    logging.info('Creating Kullback-Leibler divergence plot')
-    assert kl_divs_all_trials.shape == (len(trial_names), len(KL_DIV_VAR_NAMES)), \
-        '{} != {}'.format(kl_divs_all_trials.shape, (len(trial_names), len(KL_DIV_VAR_NAMES)))
-    if len(trial_names) > 1:
-        # normalise each quantity to [0,1]
-        for quantity_idx in range(len(KL_DIV_VAR_NAMES)):
-            kl_divs_all_trials[:,quantity_idx] = normalise(kl_divs_all_trials[:,quantity_idx])
-    else:
-        logging.info('  skipping per-quantity KL normalisation because only one trial given')
-
-    def get_scatter_style(trial: dict) -> Tuple[str,str,float]:
-        color = {'Linux': '#33a02c', 'macOS': '#fb9a99', 'Windows': '#1f78b4'}
-        marker = {'serial': 'o', 'smpar': '^', 'dmpar': 's', 'dm_sm': 'D'}
-        linewidth = {'Debug': 0, 'Release': 1}
-        return color[trial['os']], marker[trial['mode']], linewidth[trial['build_type']]
-
-    # We want to have 2 labels for each quantity and plot them next to each other
-    # to differentiate more easily between the Make and CMake varant.
-    kl_div_var_labels = []
-    for name in KL_DIV_VAR_LABELS:
-        kl_div_var_labels.append(name + r'$_{\mathrm{Make}}$')
-        kl_div_var_labels.append(name + r'$_{\mathrm{CMake}}$')
-
-    kl_fig, kl_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    for trial_name, kl_divs in zip(trial_names, kl_divs_all_trials):
-        trial = parse_trial_name(trial_name)
-
-        # To plot Make and CMake next to each other for each variable
-        kl_divs_make_cmake = np.empty(len(kl_div_var_labels))
-        kl_divs_make_cmake.fill(np.nan)
-        if trial['build_system'] == 'Make':
-            kl_divs_make_cmake[::2] = kl_divs[:]
-        if trial['build_system'] == 'CMake':
-            kl_divs_make_cmake[1::2] = kl_divs[:]
-
-        color, marker, linewidth = get_scatter_style(trial)
-        kl_ax.scatter(kl_div_var_labels, kl_divs_make_cmake,
-                s=150, edgecolors='k', linewidth=linewidth, c=color, marker=marker, alpha=0.5)
-        # FIXME: at the top of each quantity we should show the max un-normalized KL value (in nats)
-        #if trial_idx in range(0,len(kl_div_var_labels),2):
-        #    kl_ax.annotate(r'$\nabla_{\mathrm{KL\, max =\,}}$' + f'{trial_idx} FIXME', (trial_idx, 1.05))
-    sns.despine(kl_fig)
-    kl_ax.set_xlabel('Quantity')
-    kl_ax.set_ylabel(r'$\hat{\nabla}_{\mathrm{KL}}$'+ '/1')
-    kl_fig.tight_layout()
-    savefig(kl_fig, kl_div_path)
-    plt.close(kl_fig)
+                savefig(fig, rel_err_ext_boxplot_path)
+                plt.close(fig)
 
     logging.info('Creating Pearson correlation coefficient heatmap plot')
-    pearson_fig, pearson_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(pearson_coeffs_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
-                ax=pearson_ax)
-    pearson_ax.invert_yaxis()
-    pearson_fig.tight_layout()
-    savefig(pearson_fig, pearson_path)
-    plt.close(pearson_fig)
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, pearson_path)
+    plt.close(fig)
 
     logging.info('Creating RMSE table plot')
-    rmse_fig, rmse_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(rmses_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=rmse_ax)
-    rmse_ax.invert_yaxis()
-    rmse_fig.tight_layout()
-    savefig(rmse_fig, rmse_path)
-    plt.close(rmse_fig)
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, rmse_path)
+    plt.close(fig)
 
     logging.info('Creating MAE table plot')
-    mae_fig, mae_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(maes_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=mae_ax)
-    mae_ax.invert_yaxis()
-    mae_fig.tight_layout()
-    savefig(mae_fig, mae_path)
-    plt.close(mae_fig)
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, mae_path)
+    plt.close(fig)
     np.savetxt(str(mae_path).format(ext='csv'), maes_all_trials, fmt='%.18f')
 
     logging.info('Creating absolute error stddev table plot')
-    ae_std_fig, ae_std_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(ae_std_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=ae_std_ax)
-    ae_std_ax.invert_yaxis()
-    ae_std_fig.tight_layout()
-    savefig(ae_std_fig, ae_std_path)
-    plt.close(ae_std_fig)
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, ae_std_path)
+    plt.close(fig)
     np.savetxt(str(ae_std_path).format(ext='csv'), ae_std_all_trials, fmt='%.18f')
 
     logging.info('Creating absolute error min table plot')
-    ae_min_fig, ae_min_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(ae_min_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=ae_min_ax)
-    ae_min_ax.invert_yaxis()
-    ae_min_fig.tight_layout()
-    savefig(ae_min_fig, ae_min_path)
-    plt.close(ae_min_fig)
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, ae_min_path)
+    plt.close(fig)
     np.savetxt(str(ae_min_path).format(ext='csv'), ae_min_all_trials, fmt='%.18f')
 
     logging.info('Creating absolute error max table plot')
-    ae_max_fig, ae_max_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(ae_max_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=ae_max_ax)
-    ae_max_ax.invert_yaxis()
-    ae_max_fig.tight_layout()
-    savefig(ae_max_fig, ae_max_path)
-    plt.close(ae_max_fig)
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, ae_max_path)
+    plt.close(fig)
     np.savetxt(str(ae_max_path).format(ext='csv'), ae_max_all_trials, fmt='%.18f')
 
     logging.info('Creating absolute error latex table')
-    tex = abs_err_to_latex(trial_labels, [f'{l} in {u}' for l,u in zip(KL_DIV_VAR_LABELS, KL_DIV_VAR_UNITS)],
+    tex = abs_err_to_latex(trial_labels, [f'{l} in {u}' for l,u in zip(VAR_LABELS, VAR_UNITS)],
                            maes_all_trials, ae_std_all_trials, ae_max_all_trials)
     with open(ae_tex_path, 'w') as fp:
         fp.write(tex)
 
     logging.info('Creating means table plot')
-    mean_fig, mean_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(means_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=mean_ax)
-    mean_ax.invert_yaxis()
-    mean_fig.tight_layout()
-    savefig(mean_fig, mean_path)
-    plt.close(mean_fig)
-    np.savetxt(str(mean_path) + '.csv', means_all_trials, fmt='%.18f')
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, mean_path)
+    plt.close(fig)
+    np.savetxt(str(mean_path).format(ext='csv'), means_all_trials, fmt='%.18f')
 
-    logging.info('Creating NRMSE heatmap')
-    nrmse_fig, nrmse_ax = plt.subplots(figsize=(10,6), dpi=dpi)
-    sns.heatmap(rmses_all_trials / means_all_trials * 100, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
-                cbar_kws={'label': 'NRMSE in %'}, cmap='viridis',
-                ax=nrmse_ax)
-    nrmse_ax.invert_yaxis()
-    nrmse_ax.set_xlabel('Quantity')
-    nrmse_ax.set_ylabel('Trial')
-    nrmse_fig.tight_layout()
-    savefig(nrmse_fig, nrmse_path)
-    plt.close(nrmse_fig)
+    logging.info('Creating ranges table plot')
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(ranges_all_trials, annot=True, fmt='.3g',
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
+                cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, range_path)
+    plt.close(fig)
+    np.savetxt(str(range_path).format(ext='csv'), ranges_all_trials, fmt='%.18f')
 
     logging.info('Creating IQR table plot')
-    iqr_fig, iqr_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(iqrs_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
                 cbar=False, cmap=['white'], linewidths=.5, linecolor='k',
-                ax=iqr_ax)
-    iqr_ax.invert_yaxis()
-    iqr_fig.tight_layout()
-    savefig(iqr_fig, iqr_path)
-    plt.close(iqr_fig)
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, iqr_path)
+    plt.close(fig)
+    np.savetxt(str(iqr_path).format(ext='csv'), iqrs_all_trials, fmt='%.18f')
 
-    logging.info('Creating RMSEIQR heatmap')
-    rmseiqr_fig, rmseiqr_ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    logging.info('Creating NRMSE (mean-normalised) heatmap')
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(rmses_all_trials / means_all_trials * 100, annot=True, fmt='.3g',
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
+                cbar_kws={'label': 'NRMSPE in %'}, cmap='viridis',
+                ax=ax)
+    ax.invert_yaxis()
+    ax.set_xlabel('Quantity')
+    ax.set_ylabel('Trial')
+    fig.tight_layout()
+    savefig(fig, nrmse_mean_path)
+    plt.close(fig)
+    
+    logging.info('Creating NRMSE (range-normalised) heatmap')
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
+    sns.heatmap(rmses_all_trials / ranges_all_trials * 100, annot=True, fmt='.3g',
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
+                cbar_kws={'label': 'NRMSPE in %'}, cmap='viridis',
+                ax=ax)
+    ax.invert_yaxis()
+    ax.set_xlabel('Quantity')
+    ax.set_ylabel('Trial')
+    fig.tight_layout()
+    savefig(fig, nrmse_range_path)
+    plt.close(fig)
+
+    logging.info('Creating NRMSE (IQR-normalised) heatmap')
+    fig, ax = plt.subplots(figsize=(10,6), dpi=dpi)
     sns.heatmap(rmses_all_trials / iqrs_all_trials, annot=True, fmt='.3g',
-                xticklabels=KL_DIV_VAR_LABELS, yticklabels=trial_labels,
-                ax=rmseiqr_ax)
-    rmseiqr_ax.invert_yaxis()
-    rmseiqr_fig.tight_layout()
-    savefig(rmseiqr_fig, rmseiqr_path)
-    plt.close(rmseiqr_fig)
+                xticklabels=VAR_LABELS, yticklabels=trial_labels,
+                cbar_kws={'label': 'NRMSPE in %'}, cmap='viridis',
+                ax=ax)
+    ax.invert_yaxis()
+    fig.tight_layout()
+    savefig(fig, nrmse_iqr_path)
+    plt.close(fig)
 
 if __name__ == '__main__':
     init_logging()

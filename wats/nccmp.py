@@ -12,7 +12,7 @@ import wrf
 from wats.util import get_log_level
 
 def read_var(ds: nc.Dataset, name: str, time_idx: Optional[int]=None) -> np.array:
-    if name == 'TKE':
+    if name == 'KE':
         u = wrf.getvar(ds, 'U', time_idx, squeeze=False).values
         v = wrf.getvar(ds, 'V', time_idx, squeeze=False).values
         w = wrf.getvar(ds, 'W', time_idx, squeeze=False).values
@@ -44,6 +44,35 @@ def calc_rel_error(var_ref: np.array, var_trial: np.array) -> np.array:
     rel_error[ref_zeros] = 0
 
     return rel_error
+
+def calc_rel_error_range_normalised(var_ref: np.array, var_trial: np.array) -> np.array:
+    err = var_trial - var_ref
+    ref_range = calc_range(var_ref)
+
+    if ref_range == 0:
+        raise ValueError('ref_range == 0')
+
+    rel_error = err / ref_range
+    return rel_error
+
+def calc_rel_error_iqr_normalised(var_ref: np.array, var_trial: np.array) -> np.array:
+    err = var_trial - var_ref
+    ref_iqr = calc_iqr(var_ref)
+
+    if ref_iqr == 0:
+        raise ValueError('ref_iqr == 0')
+
+    rel_error = err / ref_iqr
+    return rel_error
+
+def calc_range(arr: np.array) -> float:
+    range_ = np.max(arr) - np.min(arr)
+    return range_
+
+def calc_iqr(arr: np.array) -> float:
+    q1, q3 = np.percentile(arr, [25, 75])
+    iqr = q3 - q1
+    return iqr
 
 def compare_categorical_var(var1: np.array, var2: np.array, name: str, tol_percentage: float) -> bool:
     mismatches = np.count_nonzero(var1 != var2)

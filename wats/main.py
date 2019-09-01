@@ -65,7 +65,7 @@ WRF_CONTINUOUS = set([
     'pressure',
     'geopotential',
     'theta',
-    'TKE'
+    'KE'
 ])
 
 def get_case_name(nml_path: Path) -> str:
