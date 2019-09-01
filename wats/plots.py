@@ -298,6 +298,10 @@ def plot(stats_path: Path, plots_dir: Path, trial_filter: Optional[str]=None, de
         trial_labels.append('{os}/{system}/{type}/{mode}'.format(
             os=trial['os'], system=trial['build_system'],
             type=trial['build_type'], mode=trial['mode']))
+    
+    # remove build system in label if Make vs CMake comparison
+    if all('CMake' in label for label in trial_labels):
+        trial_labels = [label.replace('CMake/', '') for label in trial_labels]
 
     logging.info('Saving trial labels')
     with open(trial_labels_path, 'w') as fp:
