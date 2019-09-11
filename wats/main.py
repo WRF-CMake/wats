@@ -1,3 +1,4 @@
+# WRF-CMake Automated Testing Suite (WATS) (https://github.com/WRF-CMake/wats).
 # Copyright 2018 M. Riechert and D. Meyer. Licensed under the MIT License.
 
 from typing import Iterable, Union, Tuple, Optional
