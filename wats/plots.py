@@ -18,6 +18,8 @@ import matplotlib.cbook as cb
 from matplotlib.markers import MarkerStyle
 import seaborn as sns
 
+from extended_boxplots import compute_extended_boxplot_stats, plot_extended_boxplot
+
 sns.set_context('paper')
 sns.set_style('ticks')
 
@@ -29,7 +31,6 @@ from wats.util import init_logging
 from wats.nccmp import (
     read_var, calc_rel_error, calc_rel_error_range_normalised,
     calc_rel_error_iqr_normalised, calc_range, calc_iqr)
-from wats.ext_boxplot import compute_extended_boxplot_stats, plot_extended_boxplot
 from wats.latex import abs_err_to_latex
 
 VAR_NAMES = [

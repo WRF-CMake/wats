@@ -10,5 +10,5 @@ dependencies:
   - colorlog
   - colorama
   - seaborn
-  #- pip:
-  #  - ..
+  - pip:
+    - Extended-BoxPlots

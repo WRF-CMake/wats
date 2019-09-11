@@ -7,3 +7,4 @@ netCDF4
 wrf-python
 matplotlib
 seaborn
+Extended-BoxPlots
